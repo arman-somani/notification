@@ -2,14 +2,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// TODO: Replace with your Firebase project configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAPwLFwk11H_zteh2kECBHvg-XhkUg64Eg",
+  authDomain: "notification-app-c52d3.firebaseapp.com",
+  projectId: "notification-app-c52d3",
+  storageBucket: "notification-app-c52d3.firebasestorage.app",
+  messagingSenderId: "134533953641",
+  appId: "1:134533953641:web:5a1069451124192f94caf8"
 };
 
 const app = initializeApp(firebaseConfig);

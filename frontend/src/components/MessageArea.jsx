@@ -1,490 +1,489 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Hash, MessageSquare, Reply, Edit2, Trash2, X, Check, CheckCheck, MoreHorizontal, Menu, Smile, UserMinus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Send, Hash, MessageSquare, Reply, Edit2, Trash2, X, Check, CheckCheck, Smile, Menu } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, doc, deleteDoc, arrayUnion, getDocs } from 'firebase/firestore';
+import { AuthContext } from '../context/AuthContext';
+
+const getGradient = (id = '') => {
+  const gradients = [
+    ['#0f172a', '#334155'],
+    ['#6366f1', '#a855f7'],
+    ['#3b82f6', '#06b6d4'],
+    ['#10b981', '#34d399'],
+    ['#f59e0b', '#f97316'],
+  ];
+  const h = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return gradients[h % gradients.length];
+};
+
+const Avatar = ({ src, username, size = 32 }) => {
+  const [c1, c2] = getGradient(username);
+  return src
+    ? <img src={src} alt={username} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
+    : <div style={{
+        width: size, height: size, borderRadius: '50%',
+        background: `linear-gradient(135deg, ${c1}, ${c2})`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: 'white', fontWeight: 700, fontSize: size * 0.4,
+        border: '1px solid var(--border)', flexShrink: 0,
+      }}>
+        {username?.[0]?.toUpperCase() || '?'}
+      </div>;
+};
 
 const MessageArea = ({ currentRoom, user, onOpenSidebar }) => {
+  const { isLocalDev, localMessages, setLocalMessages, addLocalMessage, clearLocalMessages, getLocalMessages } = useContext(AuthContext);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [typingUsers, setTypingUsers] = useState(new Set());
-  
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
-  const [hoveredMessage, setHoveredMessage] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(null);
-
+  const [isSending, setIsSending] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-  const isDM = currentRoom.startsWith('dm_');
-  const roomDisplayName = isDM ? 'Direct Message' : currentRoom;
+  const isDM = currentRoom?.startsWith('dm_');
+  const roomDisplay = isDM ? 'Direct Message' : `#${currentRoom}`;
+  const [myC1, myC2] = getGradient(user?._id);
 
   useEffect(() => {
-    setReplyingTo(null);
-    setEditingMessage(null);
-    setTypingUsers(new Set());
-    
-    const messagesRef = collection(db, 'messages');
-    const q = query(messagesRef, where('room', '==', currentRoom), orderBy('createdAt', 'asc'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = [];
-      snapshot.forEach((docSnap) => {
-        msgs.push({ _id: docSnap.id, ...docSnap.data() });
-      });
-      setMessages(msgs);
-      scrollToBottom();
-    }, (error) => {
-      console.error("Error fetching messages:", error);
-    });
-
-    return () => unsubscribe();
-  }, [currentRoom]);
-
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  };
-
-  const handleTyping = (e) => {
-    setNewMessage(e.target.value);
-  };
-
-  const handleReaction = async (emojiObject, messageId) => {
-    try {
-      const msgRef = doc(db, 'messages', messageId);
-      // Simplify: add a single array of objects for reactions
-      await updateDoc(msgRef, {
-        reactions: arrayUnion({ emoji: emojiObject.emoji, users: [user._id] })
-      });
-    } catch(err) {
-      console.error(err);
+    if (isLocalDev && currentRoom) {
+      setMessages(getLocalMessages(currentRoom));
     }
+  }, [isLocalDev, currentRoom, getLocalMessages]);
+
+  useEffect(() => {
+    if (!isLocalDev && currentRoom) {
+      setReplyingTo(null);
+      setEditingMessage(null);
+
+      const q = query(
+        collection(db, 'messages'),
+        where('room', '==', currentRoom),
+        orderBy('createdAt', 'asc')
+      );
+
+      const unsub = onSnapshot(q, (snap) => {
+        const msgs = [];
+        snap.forEach(d => msgs.push({ _id: d.id, ...d.data() }));
+        setMessages(msgs);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+      }, err => console.error('Messages error:', err));
+
+      return () => unsub();
+    }
+  }, [isLocalDev, currentRoom]);
+
+  const handleReaction = async (emojiObj, messageId) => {
+    if (isLocalDev) {
+      const existing = getLocalMessages(currentRoom);
+      const next = existing.map(m => {
+        if (m._id !== messageId) return m;
+        const reactions = m.reactions ? [...m.reactions] : [];
+        reactions.push({ emoji: emojiObj.emoji, users: [user._id] });
+        return { ...m, reactions };
+      });
+      setMessages(next);
+      setLocalMessages(currentRoom, next);
+      setShowEmojiPicker(null);
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'messages', messageId), {
+        reactions: arrayUnion({ emoji: emojiObj.emoji, users: [user._id] })
+      });
+    } catch (e) { console.error(e); }
     setShowEmojiPicker(null);
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || isSending) return;
+    setIsSending(true);
+
+    const messageDoc = {
+      sender: { _id: user._id, username: user.username, avatar: user.avatar || null },
+      content: newMessage,
+      room: currentRoom,
+      replyTo: replyingTo
+        ? { _id: replyingTo._id, content: replyingTo.content, sender: replyingTo.sender }
+        : null,
+      createdAt: new Date().toISOString(),
+      isDeleted: false,
+      readBy: [user._id],
+    };
+
+    if (isLocalDev) {
+      try {
+        addLocalMessage(currentRoom, { ...messageDoc, _id: `local_${Date.now()}` });
+        setNewMessage('');
+        setReplyingTo(null);
+        setEditingMessage(null);
+        inputRef.current?.focus();
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
 
     if (editingMessage) {
       try {
-        await updateDoc(doc(db, 'messages', editingMessage._id), {
-          content: newMessage,
-          isEdited: true
-        });
-      } catch (err) {
-        console.error(err);
-      }
+        await updateDoc(doc(db, 'messages', editingMessage._id), { content: newMessage, isEdited: true });
+      } catch (e) { console.error(e); }
       setEditingMessage(null);
     } else {
       try {
-        await addDoc(collection(db, 'messages'), {
-          sender: { _id: user._id, username: user.username, avatar: user.avatar },
-          content: newMessage,
-          room: currentRoom,
-          replyTo: replyingTo ? { _id: replyingTo._id, content: replyingTo.content, sender: replyingTo.sender } : null,
-          createdAt: new Date().toISOString(),
-          isDeleted: false,
-          readBy: [user._id]
-        });
-      } catch (err) {
-        console.error(err);
-      }
+        await addDoc(collection(db, 'messages'), messageDoc);
+      } catch (e) { console.error(e); }
       setReplyingTo(null);
     }
 
     setNewMessage('');
+    setIsSending(false);
+    inputRef.current?.focus();
   };
 
-  const handleDelete = async (messageId) => {
-    try {
-      await updateDoc(doc(db, 'messages', messageId), {
-        isDeleted: true,
-        content: 'This message was deleted'
-      });
-    } catch (err) {
-      console.error(err);
+  const handleDelete = async (id) => {
+    if (isLocalDev) {
+      const existing = getLocalMessages(currentRoom);
+      const next = existing.map(m => m._id === id ? { ...m, isDeleted: true, content: 'This message was deleted' } : m);
+      setMessages(next);
+      setLocalMessages(currentRoom, next);
+      return;
     }
+    try {
+      await updateDoc(doc(db, 'messages', id), { isDeleted: true, content: 'This message was deleted' });
+    } catch (e) { console.error(e); }
   };
 
   const handleClearChat = async () => {
-    if (window.confirm("Are you sure you want to clear this entire chat history?")) {
-      try {
-        const q = query(collection(db, 'messages'), where('room', '==', currentRoom));
-        const querySnapshot = await getDocs(q);
-        querySnapshot.forEach(async (docSnap) => {
-          await deleteDoc(doc(db, 'messages', docSnap.id));
-        });
-        setMessages([]);
-      } catch (e) {
-        console.error(e);
-      }
+    if (!window.confirm('Clear all messages in this chat?')) return;
+    if (isLocalDev) {
+      setMessages([]);
+      clearLocalMessages(currentRoom);
+      return;
     }
+    try {
+      const snap = await getDocs(query(collection(db, 'messages'), where('room', '==', currentRoom)));
+      snap.forEach(async d => await deleteDoc(doc(db, 'messages', d.id)));
+      setMessages([]);
+    } catch (e) { console.error(e); }
   };
 
-  const handleUnfriend = async () => {
-    if (window.confirm("Are you sure you want to remove this user from your contacts?")) {
-      alert("Unfriending is not fully supported in this serverless preview yet.");
-    }
-  };
-
-  const formatTime = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formatTime = (s) => {
+    if (!s) return '';
+    return new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'transparent', position: 'relative', width: '100%', overflow: 'hidden' }}>
-      <style>
-        {`
-          .msg-action-bar {
-            opacity: 0;
-            pointer-events: none;
-            transform: translateY(5px);
-            transition: all 0.2s ease;
-          }
-          .msg-container:hover .msg-action-bar,
-          .msg-container.active .msg-action-bar {
-            opacity: 1;
-            pointer-events: auto;
-            transform: translateY(0);
-          }
-          .typing-dot {
-            width: 6px;
-            height: 6px;
-            background: var(--text-secondary);
-            border-radius: 50%;
-            animation: typing 1.4s infinite ease-in-out;
-          }
-          .typing-dot:nth-child(1) { animation-delay: 0s; }
-          .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-          .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-          @keyframes typing {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-4px); }
-          }
-        `}
-      </style>
-
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      background: 'transparent', position: 'relative', overflow: 'hidden', minWidth: 0,
+    }}>
       {/* Header */}
-      <div className="msg-area-header" style={{ padding: '1.5rem 2.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.02)', backdropFilter: 'blur(10px)', zIndex: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <button className="mobile-only" onClick={onOpenSidebar} style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', marginRight: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-            <Menu size={24} />
+      <div className="msg-area-header" style={{
+        padding: '0.85rem 1.5rem',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'var(--bg)',
+        flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button className="mobile-only" onClick={onOpenSidebar} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-body)', padding: 4 }}>
+            <Menu size={20} strokeWidth={2} />
           </button>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: '600' }}>
-            {isDM ? <MessageSquare size={22} color="var(--accent-primary)" /> : <Hash size={22} color="var(--accent-primary)" />}
-            {roomDisplayName}
-          </h3>
-        </div>
-        
-        {isDM && (
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <button 
-              onClick={handleClearChat}
-              title="Clear Chat History"
-              style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', padding: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}
-            >
-              <Trash2 size={18} />
-            </button>
-            <button 
-              onClick={handleUnfriend}
-              title="Remove Contact"
-              style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', padding: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}
-            >
-              <UserMinus size={18} />
-            </button>
+          <div style={{
+            width: 34, height: 34, borderRadius: 'var(--radius-sm)',
+            background: isDM ? 'var(--primary)' : 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid var(--border)',
+            flexShrink: 0,
+          }}
+          >
+            {isDM ? <MessageSquare size={16} color="white" strokeWidth={2} /> : <Hash size={16} color="white" strokeWidth={2} />}
           </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-heading)' }}>{roomDisplay}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontWeight: 600 }}>{messages.length} messages</div>
+          </div>
+        </div>
+
+        {isDM && (
+          <button
+            onClick={handleClearChat}
+            className="btn btn-danger btn-sm"
+            style={{ padding: '0.45rem 0.8rem', fontSize: '0.8rem' }}
+          >
+            <Trash2 size={13} strokeWidth={2} /> Clear
+          </button>
         )}
       </div>
 
       {/* Messages */}
-      <div className="msg-area-messages" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '2.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="msg-area-messages chat-wallpaper" style={{
+        flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem',
+        display: 'flex', flexDirection: 'column', gap: '0.6rem',
+      }}>
         {messages.length === 0 ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-secondary)', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MessageSquare size={36} color="var(--accent-primary)" style={{ opacity: 0.8 }} />
-            </div>
-            <p style={{ fontSize: '1.1rem' }}>This is the start of your conversation in <strong>{roomDisplayName}</strong>.</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+              color: 'var(--text-muted)',
+            }}
+          >
+            <div style={{ fontSize: '3rem' }}>💬</div>
+            <p style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-heading)' }}>Start the conversation!</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Say hi in {roomDisplay}</p>
+          </motion.div>
         ) : (
-          messages.map((msg, index) => {
+          messages.map((msg, i) => {
             const isMe = msg.sender?._id === user?._id;
-            
+            const [sC1] = getGradient(msg.sender?._id);
+
             return (
-              <div 
-                key={index} 
-                className={`msg-container message-item ${hoveredMessage === msg._id ? 'active' : ''}`}
-                data-id={msg._id}
-                data-sender={msg.sender?._id}
-                data-readby={JSON.stringify(msg.readBy || [])}
-                onMouseEnter={() => setHoveredMessage(msg._id)}
-                onMouseLeave={() => setHoveredMessage(null)}
-                onClick={(e) => {
-                  // Prevent click from bubbling if we're clicking the action bar itself
-                  if (!e.target.closest('.msg-action-bar')) {
-                    setHoveredMessage(hoveredMessage === msg._id ? null : msg._id);
-                  }
-                }}
-                style={{ 
-                  display: 'flex', 
-                  gap: '1rem',
+              <motion.div
+                key={msg._id || i}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                className="msg-wrap"
+                style={{
+                  display: 'flex',
                   flexDirection: isMe ? 'row-reverse' : 'row',
-                  alignItems: 'flex-end',
-                  animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                  position: 'relative'
+                  gap: '0.55rem', alignItems: 'flex-end',
+                  position: 'relative',
                 }}
               >
-                <img 
-                  src={msg.sender?.avatar} 
-                  alt={msg.sender?.username} 
-                  style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.05)' }}
-                  title={msg.sender?.username}
-                />
-                
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  alignItems: isMe ? 'flex-end' : 'flex-start',
-                  maxWidth: '75%',
-                  position: 'relative'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.4rem', padding: '0 0.5rem' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: '500', color: isMe ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                      {isMe ? 'You' : msg.sender?.username}
-                    </span>
-                    <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                      {formatTime(msg.createdAt)}
-                    </span>
-                  </div>
-                  
-                  {/* Action Bar */}
+                <Avatar src={msg.sender?.avatar} username={msg.sender?.username} size={32} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start', maxWidth: '72%', position: 'relative' }}>
                   <div className="msg-action-bar" style={{
-                    position: 'absolute',
-                    top: '-15px',
+                    position: 'absolute', top: -32,
                     [isMe ? 'left' : 'right']: 0,
-                    background: 'var(--bg-secondary)',
-                    borderRadius: '8px',
-                    padding: '4px',
-                    display: 'flex',
-                    gap: '4px',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
-                    zIndex: 10
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '3px 5px', display: 'flex', gap: 2,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)', zIndex: 20,
                   }}>
                     {!msg.isDeleted && (
-                      <button onClick={() => setShowEmojiPicker(showEmojiPicker === msg._id ? null : msg._id)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }} title="React">
-                        <Smile size={14} />
+                      <button className="action-icon-btn" onClick={() => setShowEmojiPicker(showEmojiPicker === msg._id ? null : msg._id)} title="React">
+                        <Smile size={14} strokeWidth={2} />
                       </button>
                     )}
-                    <button onClick={() => setReplyingTo(msg)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }} title="Reply">
-                      <Reply size={14} />
+                    <button className="action-icon-btn" onClick={() => { setReplyingTo(msg); inputRef.current?.focus(); }} title="Reply">
+                      <Reply size={14} strokeWidth={2} />
                     </button>
                     {isMe && !msg.isDeleted && (
                       <>
-                        <button onClick={() => { setEditingMessage(msg); setNewMessage(msg.content); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }} title="Edit">
-                          <Edit2 size={14} />
+                        <button className="action-icon-btn" onClick={() => { setEditingMessage(msg); setNewMessage(msg.content); inputRef.current?.focus(); }} title="Edit">
+                          <Edit2 size={14} strokeWidth={2} />
                         </button>
-                        <button onClick={() => handleDelete(msg._id)} style={{ background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }} title="Delete">
-                          <Trash2 size={14} />
+                        <button className="action-icon-btn" onClick={() => handleDelete(msg._id)} title="Delete" style={{ color: 'var(--danger)' }}>
+                          <Trash2 size={14} strokeWidth={2} />
                         </button>
                       </>
                     )}
                   </div>
 
-                  {showEmojiPicker === msg._id && (
-                    <div style={{ position: 'absolute', top: '-350px', [isMe ? 'right' : 'left']: '0', zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-                      <EmojiPicker 
-                        onEmojiClick={(emoji) => handleReaction(emoji, msg._id)}
-                        theme="dark"
-                        lazyLoadEmojis={true}
-                      />
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {showEmojiPicker === msg._id && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: -320 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        style={{
+                          position: 'absolute', top: 0,
+                          [isMe ? 'right' : 'left']: 0, zIndex: 100,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                          borderRadius: 'var(--radius)', overflow: 'hidden',
+                          border: '1px solid var(--border)',
+                        }}
+                      >
+                        <EmojiPicker onEmojiClick={(em) => handleReaction(em, msg._id)} theme="light" lazyLoadEmojis />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                  <div style={{ 
-                    padding: '0.85rem 1.25rem', 
-                    borderRadius: '1.2rem',
-                    borderBottomRightRadius: isMe ? '4px' : '1.2rem',
-                    borderBottomLeftRadius: !isMe ? '4px' : '1.2rem',
-                    background: msg.isDeleted ? 'transparent' : (isMe ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'rgba(255,255,255,0.06)'),
-                    color: msg.isDeleted ? 'var(--text-secondary)' : 'white',
-                    boxShadow: (isMe && !msg.isDeleted) ? '0 8px 20px rgba(139, 92, 246, 0.3)' : '0 4px 15px rgba(0,0,0,0.2)',
-                    border: msg.isDeleted ? '1px dashed rgba(255,255,255,0.2)' : (isMe ? 'none' : '1px solid rgba(255,255,255,0.05)'),
-                    lineHeight: '1.5',
-                    fontSize: '0.95rem',
-                    wordBreak: 'break-word',
-                    backdropFilter: isMe ? 'none' : 'blur(10px)',
-                    fontStyle: msg.isDeleted ? 'italic' : 'normal',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem'
-                  }}>
-                    {/* Reply Quote Block */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginBottom: '0.2rem', padding: '0 0.4rem' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: isMe ? 'var(--primary)' : sC1 }}>
+                      {isMe ? 'You' : msg.sender?.username}
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{formatTime(msg.createdAt)}</span>
+                    {msg.isEdited && !msg.isDeleted && <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>(edited)</span>}
+                  </div>
+
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    className="msg-bubble"
+                    style={{
+                      padding: '0.65rem 1rem',
+                      borderRadius: 'var(--radius)',
+                      borderBottomRightRadius: isMe ? '2px' : 'var(--radius)',
+                      borderBottomLeftRadius: isMe ? 'var(--radius)' : '2px',
+                      background: msg.isDeleted
+                        ? 'rgba(15, 23, 42, 0.05)'
+                        : isMe
+                          ? `linear-gradient(135deg, ${myC1}, ${myC2})`
+                          : 'var(--bg-secondary)',
+                      color: msg.isDeleted ? 'var(--text-dim)' : isMe ? 'white' : 'var(--text-heading)',
+                      border: msg.isDeleted
+                        ? '1px dashed rgba(99,102,241,0.2)'
+                        : isMe ? '1px solid var(--primary)' : '1px solid var(--border)',
+                      fontSize: '0.9rem', lineHeight: 1.6, fontWeight: 500,
+                      wordBreak: 'break-word',
+                      display: 'flex', flexDirection: 'column', gap: '0.3rem',
+                    }}
+                  >
                     {msg.replyTo && (
-                      <div style={{ 
-                        background: 'rgba(0,0,0,0.15)', 
-                        borderLeft: `3px solid ${isMe ? 'rgba(255,255,255,0.5)' : 'var(--accent-primary)'}`,
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: '4px',
-                        fontSize: '0.85rem',
-                        color: isMe ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)'
+                      <div style={{
+                        background: isMe ? 'rgba(255,255,255,0.7)' : 'rgba(99,102,241,0.08)',
+                        borderLeft: `3px solid ${isMe ? 'var(--text-heading)' : 'var(--accent)'}`,
+                        borderRadius: 'var(--radius-sm)', padding: '0.35rem 0.6rem', fontSize: '0.8rem',
+                        color: isMe ? 'var(--text-body)' : 'var(--text-body)',
                       }}>
-                        <span style={{ fontWeight: '600', display: 'block', marginBottom: '2px' }}>{msg.replyTo?.sender?.username || 'Unknown'}</span>
-                        <span style={{ opacity: 0.9 }}>{msg.replyTo.isDeleted ? 'This message was deleted' : (msg.replyTo.content ? msg.replyTo.content.substring(0, 50) + (msg.replyTo.content.length > 50 ? '...' : '') : '')}</span>
+                        <div style={{ fontWeight: 700, marginBottom: 2 }}>{msg.replyTo.sender?.username}</div>
+                        <div style={{ opacity: 0.8 }}>
+                          {msg.replyTo.isDeleted ? 'Message deleted' : (msg.replyTo.content?.substring(0, 60) + (msg.replyTo.content?.length > 60 ? '…' : ''))}
+                        </div>
                       </div>
                     )}
 
-                    <div>
-                      {msg.content}
-                      {msg.isEdited && !msg.isDeleted && <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '8px' }}>(edited)</span>}
-                    </div>
+                    {msg.content}
 
-                    {msg.reactions && msg.reactions.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                        {msg.reactions.map((r, i) => {
-                          const hasReacted = r.users.includes(user._id);
+                    {msg.reactions?.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                        {msg.reactions.map((r, ri) => {
+                          const reacted = r.users.includes(user._id);
                           return (
-                            <button 
-                              key={i} 
+                            <motion.button
+                              key={ri}
+                              whileHover={{ scale: 1.1 }}
+                              className="reaction-btn"
                               onClick={() => handleReaction({ emoji: r.emoji }, msg._id)}
                               style={{
-                                background: hasReacted ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.08)',
-                                border: hasReacted ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '12px',
-                                padding: '2px 6px',
-                                fontSize: '0.8rem',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease'
+                                background: reacted ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                                border: reacted ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                borderRadius: 10, padding: '2px 7px', fontSize: '0.8rem',
+                                color: isMe ? 'white' : 'var(--text-heading)',
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3,
+                                fontFamily: 'var(--font-sans)', fontWeight: 600,
                               }}
                             >
-                              <span>{r.emoji}</span>
-                              <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>{r.users.length}</span>
-                            </button>
+                              {r.emoji} <span style={{ fontSize: '0.7rem' }}>{r.users.length}</span>
+                            </motion.button>
                           );
                         })}
                       </div>
                     )}
-                  </div>
+                  </motion.div>
 
-                  {/* Read Receipts for DMs */}
-                  {isMe && isDM && (
-                    <div style={{ marginTop: '4px', paddingRight: '4px' }}>
-                      {msg.readBy && msg.readBy.length > 0 ? (
-                        <CheckCheck size={14} color="#38bdf8" />
-                      ) : (
-                        <Check size={14} color="var(--text-secondary)" />
-                      )}
+                  {isMe && isDM && !msg.isDeleted && (
+                    <div style={{ marginTop: 3, paddingRight: 4 }}>
+                      {msg.readBy?.length > 1
+                        ? <CheckCheck size={14} color="var(--primary)" strokeWidth={2} />
+                        : <Check size={14} color="var(--text-dim)" strokeWidth={2} />}
                     </div>
                   )}
-
                 </div>
-              </div>
+              </motion.div>
             );
           })
         )}
-        
-        {/* Typing Indicator */}
-        {typingUsers.size > 0 && (
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '1rem', animation: 'fadeIn 0.2s' }}>
-             <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-               <MoreHorizontal size={20} color="var(--text-secondary)" />
-             </div>
-             <div style={{ background: 'rgba(255,255,255,0.06)', padding: '0.75rem 1rem', borderRadius: '1.2rem', borderBottomLeftRadius: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-               <div className="typing-dot"></div>
-               <div className="typing-dot"></div>
-               <div className="typing-dot"></div>
-             </div>
-          </div>
-        )}
-        
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="msg-area-input" style={{ padding: '1.5rem 2.5rem', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
-        
-        {/* Reply/Edit Banner */}
-        {(replyingTo || editingMessage) && (
-          <div style={{ 
-            background: 'var(--bg-secondary)', 
-            borderTopLeftRadius: 'var(--border-radius-lg)', 
-            borderTopRightRadius: 'var(--border-radius-lg)', 
-            padding: '0.75rem 1.25rem',
-            border: '1px solid rgba(255,255,255,0.05)',
-            borderBottom: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            animation: 'fadeIn 0.2s'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              {editingMessage ? <Edit2 size={16} color="var(--accent-primary)" /> : <Reply size={16} color="var(--accent-primary)" />}
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {editingMessage ? 'Editing Message' : `Replying to ${replyingTo.sender.username}`}
+      {/* Input */}
+      <div className="msg-area-input" style={{
+        padding: '0.85rem 1.5rem',
+        background: 'var(--bg)',
+        borderTop: '1px solid var(--border)',
+        flexShrink: 0,
+      }}>
+        <AnimatePresence>
+          {(replyingTo || editingMessage) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'rgba(99, 102, 241, 0.05)',
+                border: '1px solid rgba(99, 102, 241, 0.1)',
+                borderRadius: 'var(--radius) var(--radius) 0 0',
+                padding: '0.5rem 0.85rem', marginBottom: -1,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {editingMessage ? <Edit2 size={14} color="var(--primary)" strokeWidth={2} /> : <Reply size={14} color="var(--primary)" strokeWidth={2} />}
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {editingMessage ? 'Editing message' : `Replying to ${replyingTo.sender.username}`}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-body)', marginTop: 1 }}>
+                      {editingMessage ? editingMessage.content : replyingTo.content?.substring(0, 60)}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  {editingMessage ? editingMessage.content : replyingTo.content}
-                </div>
+                <button
+                  onClick={() => { setReplyingTo(null); setEditingMessage(null); setNewMessage(''); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: 4, borderRadius: 6 }}
+                >
+                  <X size={15} strokeWidth={2} />
+                </button>
               </div>
-            </div>
-            <button onClick={() => { setReplyingTo(null); setEditingMessage(null); setNewMessage(''); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <X size={18} />
-            </button>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <form onSubmit={handleSend} className="glass-item" style={{ 
-          display: 'flex', 
-          gap: '1rem', 
-          padding: '0.6rem', 
-          borderRadius: (replyingTo || editingMessage) ? '0 0 var(--border-radius-lg) var(--border-radius-lg)' : 'var(--border-radius-lg)',
-          borderTopLeftRadius: (replyingTo || editingMessage) ? '0' : 'var(--border-radius-lg)',
-          borderTopRightRadius: (replyingTo || editingMessage) ? '0' : 'var(--border-radius-lg)',
+        <form onSubmit={handleSend} style={{
+          display: 'flex', gap: '0.65rem', alignItems: 'center',
+          background: 'var(--bg-secondary)',
+          borderRadius: (replyingTo || editingMessage) ? `0 0 var(--radius) var(--radius)` : 'var(--radius)',
+          border: `1px solid ${isFocused ? 'var(--border-focus)' : 'var(--border)'}`,
+          padding: '0.45rem 0.5rem 0.45rem 1rem',
+          transition: 'border-color 0.15s',
         }}>
           <input
+            ref={inputRef}
             type="text"
             value={newMessage}
-            onChange={handleTyping}
-            placeholder={editingMessage ? "Edit your message..." : `Message ${roomDisplayName}...`}
+            onChange={e => setNewMessage(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={editingMessage ? 'Edit your message…' : `Message ${roomDisplay}…`}
             style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-primary)',
-              padding: '0.5rem 1rem',
-              fontSize: '1rem',
-              outline: 'none'
+              flex: 1, background: 'transparent', border: 'none',
+              color: 'var(--text-heading)', fontSize: '0.95rem', outline: 'none',
+              fontFamily: 'var(--font-sans)', fontWeight: 500,
             }}
           />
-          <button 
-            type="submit" 
-            disabled={!newMessage.trim()}
-            style={{ 
-              background: newMessage.trim() ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'rgba(255,255,255,0.1)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '50%',
-              width: '44px',
-              height: '44px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+          <motion.button
+            type="submit"
+            disabled={!newMessage.trim() || isSending}
+            whileHover={newMessage.trim() ? { scale: 1.05 } : {}}
+            whileTap={newMessage.trim() ? { scale: 0.95 } : {}}
+            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            style={{
+              width: 38, height: 38, borderRadius: 'var(--radius-sm)',
+              border: 'none', flexShrink: 0,
+              background: newMessage.trim() ? `linear-gradient(135deg, ${myC1}, ${myC2})` : 'rgba(99,102,241,0.08)',
+              color: newMessage.trim() ? 'white' : 'var(--text-dim)',
               cursor: newMessage.trim() ? 'pointer' : 'not-allowed',
-              transition: 'all var(--transition-fast)',
-              boxShadow: newMessage.trim() ? '0 4px 15px rgba(139, 92, 246, 0.4)' : 'none'
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
-            {editingMessage ? <Check size={18} /> : <Send size={18} style={{ transform: 'translateX(-1px) translateY(1px)' }} />}
-          </button>
+            {editingMessage ? <Check size={18} strokeWidth={2} /> : <Send size={18} strokeWidth={2} style={{ transform: 'translateX(1px)' }} />}
+          </motion.button>
         </form>
       </div>
     </div>

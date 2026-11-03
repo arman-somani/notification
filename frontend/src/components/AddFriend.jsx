@@ -1,218 +1,219 @@
 import React, { useState, useEffect } from 'react';
-import { Search, UserPlus, User as UserIcon } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Search, UserPlus, CheckCircle, Users } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { SpotlightCard } from './ui/Animated';
+
+const getGradient = (id = '') => {
+  const gradients = [
+    ['#0f172a', '#334155'], ['#6366f1', '#a855f7'], ['#3b82f6', '#06b6d4'],
+    ['#10b981', '#34d399'], ['#f59e0b', '#f97316'], ['#ec4899', '#f472b6'],
+  ];
+  const h = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return gradients[h % gradients.length];
+};
 
 const AddFriend = ({ currentUser, onContactAdded }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [addedIds, setAddedIds] = useState(new Set());
 
-  // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery.trim().length > 0) {
-        performSearch();
-      } else {
-        setSearchResults([]);
-      }
-    }, 300);
-
+      if (searchQuery.trim().length > 0) performSearch();
+      else setSearchResults([]);
+    }, 350);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   const performSearch = async () => {
     setIsSearching(true);
     try {
-      const usersRef = collection(db, 'users');
-      // Simple exact match search for Firestore
-      const q = query(usersRef, where('username', '==', searchQuery));
-      const querySnapshot = await getDocs(q);
-      const results = [];
-      querySnapshot.forEach((docSnap) => {
-        if (docSnap.id !== currentUser._id) {
-          results.push({ _id: docSnap.id, ...docSnap.data() });
-        }
-      });
-      setSearchResults(results);
-    } catch (err) {
-      console.error('Search failed', err);
-    } finally {
-      setIsSearching(false);
-    }
+      const snap = await getDocs(query(collection(db, 'users'), where('username', '==', searchQuery.trim())));
+      const res = [];
+      snap.forEach(d => { if (d.id !== currentUser._id) res.push({ _id: d.id, ...d.data() }); });
+      setSearchResults(res);
+    } catch (e) { console.error(e); }
+    finally { setIsSearching(false); }
   };
 
-  const handleAddContact = async (contactId) => {
+  const handleAdd = async (contactId) => {
     try {
-      await updateDoc(doc(db, 'users', currentUser._id), {
-        contacts: arrayUnion(contactId)
-      });
-      // Optionally add currentUser to the contact's friend list as well
-      await updateDoc(doc(db, 'users', contactId), {
-        contacts: arrayUnion(currentUser._id)
-      });
-      
-      setSearchQuery('');
-      setSearchResults([]);
-      if (onContactAdded) {
-        onContactAdded(contactId);
-      }
-    } catch (err) {
-      console.error('Add contact failed', err);
-    }
+      await updateDoc(doc(db, 'users', currentUser._id), { contacts: arrayUnion(contactId) });
+      await updateDoc(doc(db, 'users', contactId), { contacts: arrayUnion(currentUser._id) });
+      setAddedIds(prev => new Set([...prev, contactId]));
+      setTimeout(() => {
+        setSearchQuery('');
+        setSearchResults([]);
+        if (onContactAdded) onContactAdded(contactId);
+      }, 600);
+    } catch (e) { console.error(e); }
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(0,0,0,0.2)' }}>
-      {/* Header */}
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        padding: '1.5rem 2rem',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1rem'
+        padding: '0.85rem 1.5rem',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--bg)',
+        display: 'flex', alignItems: 'center', gap: '0.75rem',
+        flexShrink: 0,
       }}>
-        <UserPlus size={24} color="var(--accent-primary)" />
-        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Add Friend</h2>
+        <div style={{
+          width: 34, height: 34, borderRadius: 'var(--radius-sm)',
+          background: 'var(--primary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        >
+          <UserPlus size={16} color="white" strokeWidth={2} />
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-heading)' }}>Add a Friend</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontWeight: 600 }}>Search by exact username</div>
+        </div>
       </div>
 
-      {/* Main Content */}
-      <div style={{ padding: '3rem 2rem', maxWidth: '600px', margin: '0 auto', width: '100%' }}>
-        <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', fontWeight: '700' }}>Add a Friend</h3>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.95rem' }}>
-          You can add friends with their exact username. Search below!
-        </p>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2rem 1.75rem' }}>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ textAlign: 'center', marginBottom: '2rem' }}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>🤝</div>
+            <h2 style={{ fontWeight: 800, fontSize: '1.5rem', color: 'var(--text-heading)', marginBottom: '0.4rem' }}>Find Friends</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Type the exact username to find and add someone</p>
+          </motion.div>
 
-        {/* Search Input */}
-        <div 
-          className={`glass-item ${isSearchFocused ? 'focused' : ''}`} 
-          style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            borderRadius: '12px', 
-            padding: '1rem 1.5rem',
-            background: isSearchFocused ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)',
-            border: isSearchFocused ? '1px solid var(--accent-primary)' : '1px solid rgba(255,255,255,0.1)',
-            boxShadow: isSearchFocused ? '0 0 0 3px rgba(139, 92, 246, 0.2)' : 'none',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          <Search size={20} color={isSearchFocused ? "var(--accent-primary)" : "var(--text-secondary)"} style={{ marginRight: '1rem', transition: 'color 0.3s ease' }} />
-          <input 
-            type="text" 
-            placeholder="Search by username..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            style={{ 
-              border: 'none', 
-              background: 'transparent', 
-              color: 'var(--text-primary)', 
-              outline: 'none', 
-              width: '100%', 
-              fontSize: '1rem' 
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.3 }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              background: 'var(--bg)',
+              borderRadius: 'var(--radius-lg)',
+              border: `1px solid ${isSearchFocused ? 'var(--accent)' : 'var(--border)'}`,
+              padding: '0.9rem 1rem',
+              transition: 'border-color 0.15s',
             }}
-          />
-        </div>
+          >
+            <div style={{ flexShrink: 0 }}>
+              <Search size={20} color={isSearchFocused ? 'var(--accent)' : 'var(--text-dim)'} strokeWidth={2} />
+            </div>
+            <input
+              type="text"
+              placeholder="Search by username…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              style={{
+                flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                color: 'var(--text-heading)', fontSize: '1rem', fontWeight: 600,
+                fontFamily: 'var(--font-sans)',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                style={{
+                  background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.15)',
+                  borderRadius: 'var(--radius-sm)', width: 28, height: 28, cursor: 'pointer',
+                  color: 'var(--accent)', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >✕</button>
+            )}
+          </motion.div>
 
-        {/* Search Results */}
-        <div style={{ marginTop: '2rem' }}>
-          {isSearching ? (
-            <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '2rem' }}>
-              Searching...
-            </div>
-          ) : searchResults.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                Results — {searchResults.length}
-              </h4>
-              {searchResults.map(result => (
-                <div 
-                  key={result._id} 
-                  className="glass-item" 
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    padding: '1rem 1.5rem', 
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                    transition: 'all 0.2s',
-                    cursor: 'default'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = ''}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <img 
-                      src={result.avatar || 'https://via.placeholder.com/40'} 
-                      alt="avatar" 
-                      style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)' }} 
-                    />
-                    <span style={{ fontSize: '1.1rem', fontWeight: '500' }}>{result.username}</span>
-                  </div>
-                  <button 
-                    onClick={() => handleAddContact(result._id)}
-                    style={{ 
-                      background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '8px', 
-                      padding: '0.5rem 1.25rem', 
-                      cursor: 'pointer', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.5rem', 
-                      fontSize: '0.9rem', 
-                      fontWeight: '600', 
-                      boxShadow: '0 4px 15px var(--accent-glow)', 
-                      transition: 'all 0.2s' 
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 20px var(--accent-glow)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 4px 15px var(--accent-glow)';
-                    }}
-                  >
-                    Send Request
-                  </button>
+          <div style={{ marginTop: '1.5rem' }}>
+            {isSearching ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🔍</div>
+                <p style={{ fontWeight: 700 }}>Searching…</p>
+              </div>
+            ) : searchResults.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                 </div>
-              ))}
-            </div>
-          ) : searchQuery.trim().length > 0 ? (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              gap: '1rem', 
-              padding: '4rem 2rem',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }}>
-                <Search size={40} opacity={0.5} />
+                {searchResults.map((r) => {
+                  const [c1, c2] = getGradient(r._id);
+                  const wasAdded = addedIds.has(r._id);
+                  return (
+                    <motion.div
+                      key={r._id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <SpotlightCard className="surface-card" style={{ padding: '1rem 1.25rem', borderRadius: 20, border: wasAdded ? '1px solid rgba(16, 185, 129, 0.2)' : undefined, border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                          {r.avatar
+                            ? <img src={r.avatar} alt="" style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid var(--border)' }} />
+                            : <div style={{
+                                width: 40, height: 40, borderRadius: '50%',
+                                background: `linear-gradient(135deg, ${c1}, ${c2})`,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: 'white', fontWeight: 800, fontSize: '1.1rem',
+                                border: '1px solid var(--border)',
+                              }}>{r.username?.[0]?.toUpperCase()}</div>}
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-heading)' }}>{r.username}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontWeight: 600 }}>{r.email || 'Nexus member'}</div>
+                          </div>
+                        </div>
+
+                        {wasAdded ? (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.4rem',
+                            background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.1)',
+                            borderRadius: 50, padding: '0.4rem 1rem',
+                            color: 'var(--success)', fontWeight: 800, fontSize: '0.8rem',
+                          }}
+                          >
+                            <CheckCircle size={15} strokeWidth={2} /> Added
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleAdd(r._id)}
+                            style={{
+                              background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                              color: 'white', border: 'none', borderRadius: 50,
+                              padding: '0.5rem 1.1rem', fontSize: '0.8rem', fontWeight: 700,
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.4,
+                            }}
+                          >
+                            <UserPlus size={14} strokeWidth={2} /> Add
+                          </button>
+                        )}
+                      </SpotlightCard>
+                    </motion.div>
+                  );
+                })}
               </div>
-              <p>No users found matching "{searchQuery}"</p>
-            </div>
-          ) : (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              gap: '1rem', 
-              padding: '4rem 2rem',
-              color: 'var(--text-secondary)'
-            }}>
-              <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }}>
-                <UserIcon size={40} opacity={0.5} />
+            ) : searchQuery.trim().length > 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🔍</div>
+                <p style={{ fontWeight: 700, color: 'var(--text-heading)', fontSize: '0.95rem' }}>
+                  No users found for <strong style={{ color: 'var(--primary)' }}>"{searchQuery}"</strong>
+                </p>
+                <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', fontWeight: 600, marginTop: '0.4rem' }}>Search is case-sensitive and exact</p>
               </div>
-              <p>Wumpus is waiting. Search for friends to start chatting!</p>
-            </div>
-          )}
+            ) : (
+              <div style={{ textAlign: 'center', padding: '2.5rem 2rem' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>👥</div>
+                <p style={{ color: 'var(--text-heading)', fontWeight: 700, fontSize: '0.95rem' }}>Search for friends above!</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
