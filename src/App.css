@@ -750,3 +750,44 @@
   .avatar-picker { width: 50px; height: 50px; }
   .avatar-picker-actions { padding-top: 14px; }
 }
+
+
+/* Mobile navigation is shown when the desktop icon rail is hidden */
+.mobile-nav-bar { display: none; }
+
+.avatar-art { clip-path: circle(50%); }
+
+@media (max-width: 760px) {
+  .mobile-nav-bar {
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: stretch;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .mobile-nav-bar button {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-faint);
+    font: inherit;
+    cursor: pointer;
+  }
+  .mobile-nav-bar button span { font-size: 9px; font-weight: 600; }
+  .mobile-nav-bar button.selected { color: var(--text); background: var(--surface-soft); }
+  .mobile-nav-bar button.selected svg { stroke-width: 2.3; }
+  .inbox-footer { min-height: 64px; }
+}
+
+@media (max-width: 390px) {
+  .mobile-nav-bar { min-height: 54px; }
+  .mobile-nav-bar button span { font-size: 8px; }
+}
