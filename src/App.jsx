@@ -1038,20 +1038,18 @@ function App() {
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
-              {recordingPreview && (
-                <div className="voice-preview-panel">
-                  <div className="voice-preview-heading"><strong>Voice message preview</strong><span>Listen before sending · {Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span></div>
-                  <audio className="voice-preview-player" controls preload="metadata" src={recordingPreview.url} />
-                  <div className="voice-preview-actions">
-                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview}>Discard</button>
-                    <button type="button" className="voice-send-button" onClick={sendVoicePreview}><Icon name="send" size={14} /> Send voice message</button>
-                  </div>
-                </div>
-              )}
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
-                {recording ? (
+                {recordingPreview ? (
+                  <div className="composer-voice-preview" aria-label="Voice message preview">
+                    <span className="composer-voice-preview-label">Preview</span>
+                    <audio className="voice-preview-player" controls preload="metadata" src={recordingPreview.url} />
+                    <span className="composer-voice-preview-duration">{Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span>
+                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview}>Discard</button>
+                    <button type="button" className="voice-send-button" onClick={sendVoicePreview}><Icon name="send" size={14} /> Send</button>
+                  </div>
+                ) : recording ? (
                   <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
                     <span className="composer-recording-badge"><i /> REC</span>
                     <span className="voice-waveform" aria-hidden="true">
