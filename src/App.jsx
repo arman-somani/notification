@@ -137,6 +137,9 @@ const initialConversations = [
 
 const MESSAGE_RETENTION_MS = 86400000
 
+// Treat every audio-backed message as a voice message, even if its type metadata differs.
+const isAudioMessage = (message) => message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
+
 const reactionOptions = [
   { emoji: '👍', label: 'Like' },
   { emoji: '❤️', label: 'Love' },
@@ -659,7 +662,7 @@ function App() {
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
-    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : message.type === 'audio' ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now' } : item))
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : isAudioMessage(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now' } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
@@ -984,20 +987,20 @@ function App() {
                             <small>{message.imageData ? 'Open once · it cannot be reopened after closing' : 'Image bytes are not stored in this browser preview'}</small>
                           </button>
                         )
-                      ) : message.type === 'audio' ? (
+                      ) : isAudioMessage(message) ? (
                         message.mediaUrl ? <audio className="voice-message-player" controls controlsList="nodownload noplaybackrate" disablePictureInPicture onContextMenu={(event) => event.preventDefault()} src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
                           <span className="file-copy"><strong>{message.fileName}</strong><small>{message.fileMeta}</small></span>
-                          <button aria-label="Download attachment" onClick={() => showToast('File downloads will be connected in a later phase')}><Icon name="more" size={17} /></button>
+                          
                         </div>
                       ) : (
                         <div className="message-bubble">{message.text}</div>
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
                       <span className="message-meta">{message.status === 'scheduled' ? 'Scheduled · ' : ''}{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
-                      {message.type !== 'audio' && <>
+                      {!isAudioMessage(message) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
                         <button type="button" onClick={() => beginReply(message)}>Reply</button>
@@ -1015,7 +1018,7 @@ function App() {
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
                       </div>}
                       </>}
-                      {message.type !== 'audio' && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
+                      {!isAudioMessage(message) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
