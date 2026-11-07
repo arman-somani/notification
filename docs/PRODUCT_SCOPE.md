@@ -25,7 +25,14 @@
 - [ ] Browser voice-note recording and playback
 - [ ] Persistent drafts per conversation
 - [ ] Scheduled messages
-- [ ] Server-enforced disappearing-message expiry
+- [ ] Fixed disappearing-message policy: delete 24 hours after the recipient first sees the message; no user-selectable duration
+- [ ] Server-enforced expiry timestamp and cleanup
+
+## Message retention
+- Every message uses the same fixed retention rule: it expires 24 hours after the recipient first sees it.
+- Users cannot disable the rule or choose a different duration.
+- Sending a message does not start the countdown; the first recipient read/seen event does.
+- Trusted backend timestamps and cleanup enforce the rule across devices.
 
 ## Image sharing
 - [ ] Normal image messages with previews
