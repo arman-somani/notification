@@ -522,6 +522,14 @@ function App() {
           </div>
         </div>
 
+        <nav className="mobile-nav-bar" aria-label="Mobile navigation">
+          <button className={view === 'messages' ? 'selected' : ''} onClick={() => setView('messages')}><Icon name="message" size={17} /><span>Chats</span></button>
+          <button className={view === 'contacts' ? 'selected' : ''} onClick={() => setView('contacts')}><Icon name="users" size={17} /><span>Contacts</span></button>
+          <button className={view === 'starred' ? 'selected' : ''} onClick={() => setView('starred')}><Icon name="star" size={17} /><span>Starred</span></button>
+          <button className={view === 'archive' ? 'selected' : ''} onClick={() => setView('archive')}><Icon name="archive" size={17} /><span>Archive</span></button>
+          <button className={view === 'settings' ? 'selected' : ''} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>Settings</span></button>
+        </nav>
+
         <div className="inbox-footer">
           <button className="footer-profile" onClick={openAvatarPicker} aria-label="Choose your profile avatar">
             <Avatar person={{ avatarId: profileAvatar, initials: 'Y' }} size="footer" />
