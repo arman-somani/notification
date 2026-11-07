@@ -1247,3 +1247,27 @@
   .composer-voice-preview .voice-discard-button { width:30px; height:30px; flex-basis:30px; }
   .composer-voice-preview .voice-preview-send { width:34px; height:34px; min-height:34px; flex-basis:34px; }
 }
+
+
+/* Precisely center the play/pause glyph inside its circular control. */
+.custom-voice-player .voice-play-toggle {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  line-height:1;
+  font-family:Arial, sans-serif;
+  text-align:center;
+  vertical-align:middle;
+}
+.custom-voice-player .voice-play-toggle[aria-label="Play voice message"] {
+  padding-left:2px; /* Optical correction for the triangular play glyph. */
+}
+.custom-voice-player .voice-play-toggle[aria-label="Pause voice message"] {
+  padding-left:0;
+  letter-spacing:-1px;
+}
+.custom-voice-player .voice-play-toggle:focus-visible {
+  outline:2px solid var(--text);
+  outline-offset:3px;
+}
