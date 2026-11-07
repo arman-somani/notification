@@ -1271,3 +1271,33 @@
   outline:2px solid var(--text);
   outline-offset:3px;
 }
+
+
+/* Composer emoji picker with the same hover hint pattern as voice recording. */
+.emoji-picker-control { position:relative; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }
+.emoji-picker-tooltip {
+  position:absolute; z-index:30; left:50%; bottom:calc(100% + 10px); width:max-content;
+  padding:7px 10px; border:1px solid var(--line-strong); border-radius:7px;
+  background:var(--text); color:var(--surface); font-size:10px; font-weight:650; line-height:1.2;
+  opacity:0; pointer-events:none; transform:translate(-50%,4px);
+  transition:opacity .16s ease,transform .16s ease; box-shadow:0 5px 16px rgba(0,0,0,.13);
+}
+.emoji-picker-tooltip::after { content:""; position:absolute; top:100%; left:50%; border:5px solid transparent; border-top-color:var(--text); transform:translateX(-50%); }
+.emoji-picker-control:hover .emoji-picker-tooltip,
+.emoji-picker-control:focus-within .emoji-picker-tooltip { opacity:1; transform:translate(-50%,0); }
+.emoji-action.active { background:var(--surface-muted); color:var(--text); }
+.composer-emoji-picker {
+  position:absolute; z-index:40; right:-8px; bottom:calc(100% + 13px); width:min(304px,calc(100vw - 36px));
+  padding:10px; border:1px solid var(--line-strong); border-radius:12px;
+  background:var(--surface); color:var(--text); box-shadow:0 14px 40px rgba(0,0,0,.18);
+  animation:reaction-picker-in .14s ease-out both;
+}
+.composer-emoji-picker-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 2px 8px; border-bottom:1px solid var(--line); }
+.composer-emoji-picker-heading strong { font-size:11px; font-weight:700; }
+.composer-emoji-picker-heading button { display:grid; place-items:center; width:25px; height:25px; border:0; border-radius:6px; background:transparent; color:var(--text-soft); cursor:pointer; }
+.composer-emoji-picker-heading button:hover { background:var(--surface-muted); color:var(--text); }
+.composer-emoji-grid { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:3px; max-height:220px; overflow-y:auto; padding-top:8px; }
+.composer-emoji-grid button { display:grid; place-items:center; aspect-ratio:1; min-width:0; padding:0; border:1px solid transparent; border-radius:7px; background:transparent; font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; font-size:21px; line-height:1; cursor:pointer; transition:background .12s ease,transform .12s ease; }
+.composer-emoji-grid button:hover,.composer-emoji-grid button:focus-visible { background:var(--surface-muted); transform:scale(1.08); outline:none; }
+@media (max-width:520px) { .composer-emoji-picker { right:-48px; width:min(290px,calc(100vw - 24px)); } .composer-emoji-grid button { font-size:20px; } }
+@media (prefers-reduced-motion:reduce) { .composer-emoji-picker { animation:none; } .composer-emoji-grid button { transition:none; } }
