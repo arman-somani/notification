@@ -987,3 +987,8 @@
 .group-member-row small { color:var(--text-faint); font-size:9px; }
 .group-member-row button { border:1px solid var(--line); border-radius:6px; padding:5px 6px; background:var(--surface); color:var(--text-soft); font:inherit; font-size:9px; cursor:pointer; }
 .group-add-member { width:100%; padding:8px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--text); font:inherit; font-size:10px; }
+
+
+/* Fixed message-retention policy: no user-selectable duration */
+.retention-policy-note { display:inline-flex; align-items:center; gap:5px; min-height:28px; padding:0 2px; color:var(--text-faint); font-size:10px; white-space:nowrap; }
+@media (max-width:760px) { .retention-policy-note { font-size:9px; white-space:normal; } }
