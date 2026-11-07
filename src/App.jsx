@@ -158,7 +158,7 @@ function AvatarArtwork({ avatarId }) {
   if (!avatar) return null
 
   return (
-    <svg className="avatar-art" viewBox="0 0 64 64" role="img" aria-label={avatar.gender + ' ' + avatar.label + ' avatar'>
+    <svg className="avatar-art" viewBox="0 0 64 64" role="img" aria-label={avatar.gender + ' ' + avatar.label + ' avatar'}>
       <circle cx="32" cy="32" r="32" fill="#e9e9e6" />
       {avatar.pony && <path d={avatar.pony} fill={avatar.hair} />}
       <path d={avatar.back} fill={avatar.hair} />
@@ -211,7 +211,7 @@ const iconPaths = {
   spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></>,
 }
 
-function Icon({ name, size = 18, strokeWidth = 1.8, className = '' }) {
+function Icon({ name, size = 18, strokeWidth = 2, className = '' }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {iconPaths[name] || iconPaths.message}
