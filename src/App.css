@@ -806,3 +806,84 @@
     font-size: 11px;
   }
 }
+
+
+/* Live presence and typing states */
+.presence-dot,
+.avatar .presence-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, .12);
+}
+
+.rail-profile .avatar-rail .presence-dot {
+  border-color: #111;
+  background: #22c55e;
+}
+
+.chat-person .chat-status-online::before,
+.chat-person .chat-status-typing::before {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, .10);
+}
+
+.chat-person .chat-status-offline::before {
+  background: #969696;
+  box-shadow: none;
+}
+
+.chat-person .chat-status-group::before {
+  display: none;
+}
+
+.chat-person .chat-status-typing {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.typing-row {
+  align-items: center;
+  gap: 9px;
+  margin-top: -5px;
+}
+
+.typing-indicator-bubble {
+  min-width: 58px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 14px 5px;
+  background: var(--bubble-in);
+}
+
+.typing-indicator-bubble span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-soft);
+  animation: notification-typing 1.15s ease-in-out infinite;
+}
+
+.typing-indicator-bubble span:nth-child(2) { animation-delay: .16s; }
+.typing-indicator-bubble span:nth-child(3) { animation-delay: .32s; }
+
+.typing-label {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-style: italic;
+}
+
+@keyframes notification-typing {
+  0%, 60%, 100% { opacity: .38; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator-bubble span {
+    animation: none;
+    opacity: .7;
+  }
+}
