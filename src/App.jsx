@@ -1101,14 +1101,12 @@ function App() {
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
-                <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
+                {!recordingPreview && <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>}
                 {recordingPreview ? (
                   <div className="composer-voice-preview" aria-label="Voice message preview">
-                    <span className="composer-voice-preview-label">Preview</span>
                     <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
-                    <span className="composer-voice-preview-duration">{Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span>
-                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview}>Discard</button>
-                    <button type="button" className="voice-send-button" onClick={sendVoicePreview}><Icon name="send" size={14} /> Send</button>
+                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview} aria-label="Discard voice recording" title="Discard recording"><Icon name="trash" size={16} /></button>
+                    <button type="button" className="send-button voice-preview-send" onClick={sendVoicePreview} aria-label="Send voice message" title="Send voice message"><Icon name="send" size={17} /></button>
                   </div>
                 ) : recording ? (
                   <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
@@ -1125,8 +1123,8 @@ function App() {
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
-                <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>
-                <span className="voice-record-control">
+                {!recordingPreview && <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>}
+                {!recordingPreview && <span className="voice-record-control">
                   <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
                   <button
                     type="button"
@@ -1155,8 +1153,8 @@ function App() {
                     onContextMenu={(event) => event.preventDefault()}
                     aria-label={recording ? 'Recording. Release to finish' : 'Hold to record a voice message'}
                   ><Icon name="mic" size={19} /></button>
-                </span>
-                <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
+                </span>}
+                {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
               <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : scheduleAt ? 'Your message will be scheduled' : 'Drafts save automatically in this browser'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
             </form>
