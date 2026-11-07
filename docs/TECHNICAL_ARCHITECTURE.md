@@ -11,7 +11,7 @@
 - Firebase Authentication: identity, email verification, password reset, optional MFA.
 - Cloud Firestore: profiles, username index, conversations, membership, messages, reactions, polls, reports, notifications, stories, and audit records.
 - Firebase Realtime Database: presence connections and ephemeral typing state.
-- Cloud Storage: normal images and voice-note audio; strict membership, size, and MIME checks.
+- Cloud Storage: all shared images are view-once by default plus voice-note audio; strict membership, size, and MIME checks.
 - Cloud Functions: trusted role changes, scheduled sends, expiry cleanup, push fan-out, reports, admin operations, and view-once authorization/proxy.
 - Firebase Cloud Messaging: browser push.
 - Firebase App Check: app attestation and abuse reduction.
@@ -41,12 +41,12 @@
 Use connection-scoped presence and onDisconnect cleanup. Typing state is ephemeral and should have a short TTL.
 
 ## Storage paths
-- conversations/{conversationId}/images/{messageId}/{fileName}
+- All images use the protected view-once image path; no normal image-download path is exposed.
 - conversations/{conversationId}/voice/{messageId}/{fileName}
 - conversations/{conversationId}/view-once/{messageId}/{fileName}
 - stories/{uid}/{storyId}/{fileName}
 
-View-once paths must deny direct client reads. A trusted backend must enforce atomic one-open consumption and avoid reusable public URLs.
+Every shared image is view-once by default. View-once paths must deny direct client reads. A trusted backend must enforce atomic one-open consumption, ensure the sender cannot consume the recipient's open, and avoid reusable public URLs.
 
 ## Trusted backend requirements
 - Use server timestamps for authoritative times.
