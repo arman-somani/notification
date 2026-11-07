@@ -49,6 +49,44 @@ service cloud.firestore {
       match /devices/{deviceId} {
         allow read, write: if signedIn() && request.auth.uid == uid;
       }
+
+      match /contacts/{contactUid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['uid', 'requestId', 'createdAt'])
+          && request.resource.data.uid == contactUid
+          && existsAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId))
+          && getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.status == 'accepted'
+          && request.auth.uid == getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.recipientId
+          && (
+            (getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.senderId == uid
+              && getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.recipientId == contactUid)
+            ||
+            (getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.senderId == contactUid
+              && getAfter(/databases/$(database)/documents/friendRequests/$(request.resource.data.requestId)).data.recipientId == uid)
+          );
+        allow update, delete: if false;
+      }
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.senderId == request.auth.uid || resource.data.recipientId == request.auth.uid);
+      allow create: if signedIn()
+        && requestId == request.auth.uid + '_' + request.resource.data.recipientId
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly(['senderId', 'recipientId', 'status', 'createdAt'])
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.recipientId))
+        && get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.discoverable != false;
+      allow update: if signedIn()
+        && resource.data.recipientId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt'])
+        && request.resource.data.status in ['accepted', 'rejected'];
+      allow delete: if false;
     }
 
     match /usernames/{normalizedUsername} {
