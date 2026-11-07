@@ -985,7 +985,7 @@ function App() {
                           </button>
                         )
                       ) : message.type === 'audio' ? (
-                        message.mediaUrl ? <audio className="voice-message-player" controls src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
+                        message.mediaUrl ? <audio className="voice-message-player" controls controlsList="nodownload noplaybackrate" disablePictureInPicture onContextMenu={(event) => event.preventDefault()} src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
@@ -997,8 +997,9 @@ function App() {
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
                       <span className="message-meta">{message.status === 'scheduled' ? 'Scheduled · ' : ''}{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
-                      <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
-                      {selectedMessageId === message.id && <div className="message-action-row">
+                      {message.type !== 'audio' && <>
+                        <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
+                        {selectedMessageId === message.id && <div className="message-action-row">
                         <button type="button" onClick={() => beginReply(message)}>Reply</button>
                         <button type="button" onClick={() => setReactionPickerMessageId((current) => current === message.id ? null : message.id)}>😊 React</button>
                         {reactionPickerMessageId === message.id && (
@@ -1013,7 +1014,8 @@ function App() {
                         <button type="button" onClick={() => setForwardMessageId((current) => current === message.id ? null : message.id)}>Forward</button>
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
                       </div>}
-                      {forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
+                      </>}
+                      {message.type !== 'audio' && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
