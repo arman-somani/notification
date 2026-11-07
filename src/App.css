@@ -225,6 +225,8 @@
 .chat-menu { position: absolute; top: 43px; right: 0; z-index: 10; width: 205px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-soft); }
 .chat-menu button { width: 100%; display: flex; align-items: center; gap: 9px; padding: 10px; border: 0; border-radius: 8px; color: var(--text-soft); background: transparent; text-align: left; font: inherit; font-size: 10px; cursor: pointer; }
 .chat-menu button:hover { background: var(--surface-muted); color: var(--text); }
+.chat-menu button.danger-menu-item { color: #dc5555; }
+.chat-menu button.danger-menu-item:hover { background: rgba(220, 85, 85, 0.09); color: #c83e3e; }
 .mobile-back { display: none; }
 .conversation-context { display: flex; align-items: center; justify-content: center; gap: 13px; padding: 20px 30px 8px; color: var(--text-faint); font-size: 9px; font-weight: 600; }
 .context-line { height: 1px; max-width: 75px; flex: 1; background: var(--line); }
