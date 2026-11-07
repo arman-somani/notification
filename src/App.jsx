@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { collection, doc, getDoc, getDocs, limit, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
+import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 
@@ -379,6 +381,13 @@ function App({ profile, onLogout }) {
   const [waveformLevels, setWaveformLevels] = useState(() => Array(24).fill(3))
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
+  const [discoveredUsers, setDiscoveredUsers] = useState([])
+  const [friendContacts, setFriendContacts] = useState([])
+  const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
+  const [outgoingFriendRequests, setOutgoingFriendRequests] = useState([])
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState('')
+  const [friendActionBusy, setFriendActionBusy] = useState('')
   const [showGroupCreator, setShowGroupCreator] = useState(false)
   const [groupName, setGroupName] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState([])
@@ -441,6 +450,64 @@ function App({ profile, onLogout }) {
     window.addEventListener('notification-profile-updated', syncProfile)
     return () => window.removeEventListener('notification-profile-updated', syncProfile)
   }, [])
+
+  useEffect(() => {
+    if (!showNewChat || !auth?.currentUser || !db) return undefined
+    let cancelled = false
+    const loadPeopleAndRequests = async () => {
+      setDiscoveryLoading(true)
+      setDiscoveryError('')
+      try {
+        const uid = auth.currentUser.uid
+        const usernameTerm = newChatSearch.trim().toLowerCase().replace(/^@/, '')
+        const [incomingSnapshot, outgoingSnapshot, contactsSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'friendRequests'), where('recipientId', '==', uid))),
+          getDocs(query(collection(db, 'friendRequests'), where('senderId', '==', uid))),
+          getDocs(collection(db, 'users', uid, 'contacts')),
+        ])
+        const incoming = incomingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
+        const outgoing = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
+        const contacts = await Promise.all(contactsSnapshot.docs.map(async (item) => {
+          const profileSnapshot = await getDoc(doc(db, 'users', item.id))
+          if (!profileSnapshot.exists()) return null
+          const data = profileSnapshot.data()
+          return { id: item.id, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+        }))
+        let matches = []
+        if (usernameTerm.length >= 3) {
+          const peopleSnapshot = await getDocs(query(
+            collection(db, 'users'),
+            where('username', '>=', usernameTerm),
+            where('username', '<=', usernameTerm + '\uf8ff'),
+            limit(15),
+          ))
+          matches = peopleSnapshot.docs
+            .filter((item) => item.id !== uid && item.data().privacy?.discoverable !== false)
+            .map((item) => {
+              const data = item.data()
+              const name = data.displayName || data.username
+              return { id: item.id, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+            })
+        }
+        if (!cancelled) {
+          setIncomingFriendRequests(incoming)
+          setOutgoingFriendRequests(outgoing)
+          setFriendContacts(contacts.filter(Boolean))
+          setDiscoveredUsers(matches)
+        }
+      } catch (error) {
+        if (!cancelled) setDiscoveryError(error?.code === 'permission-denied'
+          ? 'Firebase rules are blocking user discovery. Check the deployed Firestore rules.'
+          : error?.message || 'Could not load people. Please try again.')
+      } finally {
+        if (!cancelled) setDiscoveryLoading(false)
+      }
+    }
+    loadPeopleAndRequests()
+    return () => { cancelled = true }
+  }, [showNewChat, newChatSearch])
+
+
 
   useEffect(() => {
     localStorage.setItem('notification-sound-enabled', String(soundEnabled))
@@ -852,6 +919,64 @@ function App({ profile, onLogout }) {
     showToast(`You left ${groupName}`)
   }
 
+  const sendFriendRequest = async (person) => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || !person?.id) return
+    const requestId = uid + '_' + person.id
+    setFriendActionBusy(person.id)
+    try {
+      await runTransaction(db, async (transaction) => {
+        const requestRef = doc(db, 'friendRequests', requestId)
+        const existing = await transaction.get(requestRef)
+        if (existing.exists()) throw new Error('A request already exists for this person.')
+        transaction.set(requestRef, { senderId: uid, recipientId: person.id, status: 'pending', createdAt: serverTimestamp() })
+      })
+      setOutgoingFriendRequests((items) => [...items, { id: requestId, senderId: uid, recipientId: person.id, status: 'pending' }])
+      showToast('Friend request sent to @' + person.username)
+    } catch (error) {
+      showToast(error?.message || 'Could not send friend request.')
+    } finally {
+      setFriendActionBusy('')
+    }
+  }
+
+  const respondToFriendRequest = async (request, accept) => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return
+    setFriendActionBusy(request.id)
+    try {
+      await runTransaction(db, async (transaction) => {
+        const requestRef = doc(db, 'friendRequests', request.id)
+        const snapshot = await transaction.get(requestRef)
+        if (!snapshot.exists() || snapshot.data().recipientId !== uid || snapshot.data().status !== 'pending') {
+          throw new Error('This friend request is no longer available.')
+        }
+        transaction.update(requestRef, { status: accept ? 'accepted' : 'rejected', respondedAt: serverTimestamp() })
+        if (accept) {
+          const senderId = snapshot.data().senderId
+          transaction.set(doc(db, 'users', uid, 'contacts', senderId), { uid: senderId, requestId: request.id, createdAt: serverTimestamp() })
+          transaction.set(doc(db, 'users', senderId, 'contacts', uid), { uid, requestId: request.id, createdAt: serverTimestamp() })
+        }
+      })
+      setIncomingFriendRequests((items) => items.filter((item) => item.id !== request.id))
+      if (accept) {
+        const senderProfile = await getDoc(doc(db, 'users', request.senderId))
+        if (senderProfile.exists()) {
+          const data = senderProfile.data()
+          const name = data.displayName || data.username
+          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
+        }
+        showToast('Friend request accepted')
+      } else {
+        showToast('Friend request declined')
+      }
+    } catch (error) {
+      showToast(error?.message || 'Could not update friend request.')
+    } finally {
+      setFriendActionBusy('')
+    }
+  }
+
   const startConversation = (person) => {
     const exists = conversations.find((item) => item.id === person.id)
     if (!exists) {
@@ -875,7 +1000,9 @@ function App({ profile, onLogout }) {
     setNewChatSearch('')
   }
 
-  const filteredDirectory = directory.filter((person) => person.name.toLowerCase().includes(newChatSearch.toLowerCase()))
+  const knownFriendIds = new Set(friendContacts.map((person) => person.id))
+  const outgoingRequestIds = new Set(outgoingFriendRequests.map((request) => request.recipientId))
+  const incomingRequestIds = new Set(incomingFriendRequests.map((request) => request.senderId))
 
   const sidebarTitle = view === 'starred' ? 'Starred' : view === 'archive' ? 'Archive' : view === 'contacts' ? 'Contacts' : 'Messages'
   const sidebarDescription = view === 'starred' ? 'Your saved conversations' : view === 'archive' ? 'Out of sight, not gone' : view === 'contacts' ? 'People you can reach' : 'Stay close to your people'
@@ -1371,17 +1498,56 @@ function App({ profile, onLogout }) {
               <button className="icon-button" onClick={() => setShowNewChat(false)} aria-label="Close new conversation"><Icon name="close" /></button>
             </div>
             <button className="create-group-launch" onClick={() => { setShowNewChat(false); setShowGroupCreator(true) }}><Icon name="users" size={16} /> Create a group</button>
-            <label className="search-box modal-search"><Icon name="search" size={17} /><input autoFocus value={newChatSearch} onChange={(event) => setNewChatSearch(event.target.value)} placeholder="Find someone by name" /></label>
-            <div className="directory-list">
-              {filteredDirectory.length ? filteredDirectory.map((person) => (
-                <button className="directory-person" key={person.id} onClick={() => startConversation(person)}>
-                  <Avatar person={person} size="lg" showStatus />
-                  <span><strong>{person.name}</strong><small>{person.status === 'online' ? 'Active now' : 'Available to chat'}</small></span>
-                  <Icon name="arrowLeft" size={16} className="directory-arrow" />
-                </button>
-              )) : <div className="directory-empty">No people found. Try another name.</div>}
-            </div>
-            <div className="modal-footnote">Demo contacts are local sample data. Real people will appear after account setup.</div>
+            <label className="search-box modal-search"><Icon name="search" size={17} /><input autoFocus value={newChatSearch} onChange={(event) => setNewChatSearch(event.target.value.replace(/[^a-zA-Z0-9_@]/g, '').slice(0, 24))} placeholder="Find people by @username" /></label>
+            {incomingFriendRequests.length > 0 && (
+              <div className="friend-section">
+                <div className="friend-section-heading">FRIEND REQUESTS <span>{incomingFriendRequests.length}</span></div>
+                {incomingFriendRequests.map((request) => (
+                  <div className="friend-request-row" key={request.id}>
+                    <span className="friend-request-copy"><strong>New friend request</strong><small>@{request.senderId.slice(0, 8)}…</small></span>
+                    <button className="friend-action-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, true)}>Accept</button>
+                    <button className="friend-decline-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, false)}>Decline</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {newChatSearch.trim().replace(/^@/, '').length < 3 && (
+              <div className="directory-empty">Enter at least 3 characters of someone's username to find them.</div>
+            )}
+            {discoveryLoading && <div className="directory-empty">Searching Notification…</div>}
+            {discoveryError && <div className="directory-empty friend-error">{discoveryError}</div>}
+            {!discoveryLoading && newChatSearch.trim().replace(/^@/, '').length >= 3 && (
+              <div className="directory-list">
+                {discoveredUsers.length ? discoveredUsers.map((person) => (
+                  <div className="friend-discovery-row" key={person.id}>
+                    <Avatar person={person} size="lg" />
+                    <span className="friend-discovery-copy"><strong>{person.name}</strong><small>@{person.username}</small></span>
+                    {knownFriendIds.has(person.id)
+                      ? <span className="friend-status-label">Friends</span>
+                      : incomingRequestIds.has(person.id)
+                        ? <span className="friend-status-label">Request received</span>
+                        : outgoingRequestIds.has(person.id)
+                          ? <span className="friend-status-label">Request sent</span>
+                          : <button className="friend-action-button" disabled={friendActionBusy === person.id} onClick={() => sendFriendRequest(person)}>{friendActionBusy === person.id ? 'Sending…' : 'Add friend'}</button>}
+                  </div>
+                )) : <div className="directory-empty">No discoverable user found for that username.</div>}
+              </div>
+            )}
+            {friendContacts.length > 0 && (
+              <div className="friend-section">
+                <div className="friend-section-heading">YOUR FRIENDS <span>{friendContacts.length}</span></div>
+                <div className="directory-list">
+                  {friendContacts.map((person) => (
+                    <button className="directory-person" key={person.id} onClick={() => { startConversation(person); showToast('Friend added. Chat syncing is the next backend step.') }}>
+                      <Avatar person={person} size="lg" />
+                      <span><strong>{person.name}</strong><small>@{person.username}</small></span>
+                      <Icon name="arrowLeft" size={16} className="directory-arrow" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="modal-footnote">Search uses permanent usernames. Friend requests and accepted contacts are stored in Firebase.</div>
           </section>
         </div>
       )}
