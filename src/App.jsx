@@ -465,7 +465,14 @@ function App({ profile, onLogout }) {
           getDocs(query(collection(db, 'friendRequests'), where('senderId', '==', uid))),
           getDocs(collection(db, 'users', uid, 'contacts')),
         ])
-        const incoming = incomingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
+        const incoming = await Promise.all(incomingSnapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((item) => item.status === 'pending')
+          .map(async (request) => {
+            const senderSnapshot = await getDoc(doc(db, 'users', request.senderId))
+            const sender = senderSnapshot.exists() ? senderSnapshot.data() : {}
+            return { ...request, senderName: sender.displayName || sender.username || 'New user', senderUsername: sender.username, senderAvatarId: sender.avatarId }
+          }))
         const outgoing = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
         const contacts = await Promise.all(contactsSnapshot.docs.map(async (item) => {
           const profileSnapshot = await getDoc(doc(db, 'users', item.id))
@@ -553,8 +560,8 @@ function App({ profile, onLogout }) {
   const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
-    ...directoryPeople.filter((person) => !conversations.some((item) => item.id === person.id)),
-  ], [conversations])
+    ...friendContacts.filter((person) => !conversations.some((item) => item.id === person.id)),
+  ], [conversations, friendContacts])
 
   const visibleConversations = useMemo(() => {
     let items = conversations
@@ -1504,7 +1511,7 @@ function App({ profile, onLogout }) {
                 <div className="friend-section-heading">FRIEND REQUESTS <span>{incomingFriendRequests.length}</span></div>
                 {incomingFriendRequests.map((request) => (
                   <div className="friend-request-row" key={request.id}>
-                    <span className="friend-request-copy"><strong>New friend request</strong><small>@{request.senderId.slice(0, 8)}…</small></span>
+                    <Avatar person={{ name: request.senderName || 'New user', avatarId: request.senderAvatarId }} size="md" /><span className="friend-request-copy"><strong>{request.senderName || 'New friend request'}</strong><small>@{request.senderUsername || request.senderId.slice(0, 8) + '…'}</small></span>
                     <button className="friend-action-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, true)}>Accept</button>
                     <button className="friend-decline-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, false)}>Decline</button>
                   </div>
