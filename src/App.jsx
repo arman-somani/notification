@@ -9,6 +9,7 @@ const initialConversations = [
     initials: 'AM',
     tone: 2,
     status: 'online',
+    typing: true,
     preview: 'Perfect. I’ll review everything this afternoon.',
     time: '10:42',
     unread: 2,
@@ -595,7 +596,7 @@ function App() {
               <button className="mobile-back icon-button" onClick={() => setMobileChatOpen(false)} aria-label="Back to conversations"><Icon name="arrowLeft" /></button>
               <div className="chat-person">
                 <Avatar person={activeConversation} size="header" showStatus />
-                <span><strong>{activeConversation.name}</strong><small>{activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}</small></span>
+                <span><strong>{activeConversation.name}</strong><small className={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}>{activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}</small></span>
               </div>
               <div className="chat-header-actions">
                 <button className="icon-button" onClick={() => showToast('Voice calls will be available in a later phase')} aria-label="Start voice call" title="Voice call"><Icon name="phone" /></button>
@@ -647,6 +648,17 @@ function App() {
                     </div>
                   </div>
                 ))}
+                {activeConversation.typing && (
+                  <div className="message-row message-incoming typing-row" aria-label={activeConversation.name + ' is typing'}>
+                    <Avatar person={activeConversation} size="message" />
+                    <div className="typing-indicator-bubble" role="status" aria-live="polite" aria-label="Typing">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <span className="typing-label">typing</span>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             </div>
