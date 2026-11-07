@@ -51,6 +51,8 @@ View-once paths must deny direct client reads. A trusted backend must enforce at
 ## Trusted backend requirements
 - Use server timestamps for authoritative times.
 - Scheduled sends must be executed by trusted scheduled functions, not browser timers.
+- Every message has a fixed retention policy: expire 24 hours after the first recipient seen/read event; users cannot change or disable this duration.
+- The trusted backend records the first recipient seenAt using a server timestamp and sets expiresAt = seenAt + 24 hours. Sending time must not start the countdown.
 - Message expiry must be enforced by backend cleanup and access checks, not only by hiding UI.
 - Push fan-out must check membership, block lists, mute settings, and privacy preferences.
 - Admin roles and verification flags must be controlled by trusted claims/backend operations.
