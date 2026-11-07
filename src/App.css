@@ -1363,3 +1363,27 @@
 .details-person-identity > span:last-child { display:flex; flex-direction:column; align-items:center; gap:4px; }
 .details-person-identity strong { margin-top:12px; color:var(--text); font-size:12px; font-weight:700; }
 .details-person-identity .details-status { margin-top:0; color:var(--text-soft); font-size:9px; }
+
+
+/* Keep the info action visible and anchor its panel to the chat's right edge. */
+@media (max-width: 1050px) {
+  .details-panel {
+    display: flex;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(320px, 42%);
+    min-width: 250px;
+    max-width: 88%;
+    flex: none;
+    box-shadow: -16px 0 42px rgba(0,0,0,.14);
+  }
+}
+@media (max-width: 760px) {
+  .details-panel { width: min(340px, 88%); min-width: 0; max-width: none; }
+}
+@media (max-width: 390px) {
+  .chat-header-actions .icon-button:nth-child(2) { display: inline-grid; }
+}
