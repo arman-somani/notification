@@ -1,0 +1,48 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isConversationMember(conversationId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/conversations/$(conversationId)/members/$(request.auth.uid));
+    }
+
+    match /conversations/{conversationId}/images/{messageId}/{fileName} {
+      allow read: if isConversationMember(conversationId);
+      allow create: if isConversationMember(conversationId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+      allow update, delete: if false;
+    }
+
+    match /conversations/{conversationId}/voice/{messageId}/{fileName} {
+      allow read: if isConversationMember(conversationId);
+      allow create: if isConversationMember(conversationId)
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('audio/(webm|ogg|mpeg|mp4|wav)');
+      allow update, delete: if false;
+    }
+
+    // View-once media is intentionally inaccessible through direct client reads.
+    // A trusted backend must authorize and consume the one-time view atomically.
+    match /conversations/{conversationId}/view-once/{messageId}/{fileName} {
+      allow read, write: if false;
+    }
+
+    match /stories/{uid}/{storyId}/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
