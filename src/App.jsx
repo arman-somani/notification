@@ -262,11 +262,17 @@ function App() {
   const [recording, setRecording] = useState(false)
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
+  const [showGroupCreator, setShowGroupCreator] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupMemberIds, setGroupMemberIds] = useState([])
+  const [showPollComposer, setShowPollComposer] = useState(false)
+  const [pollQuestion, setPollQuestion] = useState('')
+  const [pollOptions, setPollOptions] = useState('')
   const [showDetails, setShowDetails] = useState(false)
   const [showChatMenu, setShowChatMenu] = useState(false)
   const [toast, setToast] = useState('')
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof Notification !== 'undefined' && Notification.permission === 'granted')
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [compactMode, setCompactMode] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
@@ -470,6 +476,46 @@ function App() {
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
+  const createGroup = () => {
+    const title = groupName.trim()
+    const selected = directory.filter((person) => groupMemberIds.includes(person.id))
+    if (!title) { showToast('Enter a group name'); return }
+    if (!selected.length) { showToast('Choose at least one group member'); return }
+    const id = 'group-' + Date.now()
+    const group = { id, name: title, initials: title.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), tone: 6, status: 'group', members: (selected.length + 1) + ' members', memberIds: ['you', ...selected.map((person) => person.id)], admins: ['you'], moderators: [], preview: 'Group created', time: 'Now', unread: 0, pinned: false, favorite: false, archived: false, muted: false, messages: [] }
+    setConversations((items) => [group, ...items])
+    setActiveId(id); setView('messages'); setMobileChatOpen(true)
+    setShowGroupCreator(false); setShowNewChat(false); setGroupName(''); setGroupMemberIds([])
+    showToast('Group created in this browser preview')
+  }
+
+  const createPoll = () => {
+    const question = pollQuestion.trim()
+    const options = [...new Set(pollOptions.split('\n').map((option) => option.trim()).filter(Boolean))]
+    if (activeConversation?.status !== 'group') { showToast('Polls are available in group chats'); return }
+    if (!question || options.length < 2) { showToast('Add a question and at least two options'); return }
+    const message = { id: 'poll-' + Date.now(), from: 'me', type: 'poll', poll: { question, options, votes: {} }, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'Poll: ' + question, time: 'Now' } : item))
+    setPollQuestion(''); setPollOptions(''); setShowPollComposer(false)
+  }
+
+  const voteOnPoll = (messageId, option) => {
+    setConversations((items) => items.map((item) => item.id === activeId ? {
+      ...item, messages: item.messages.map((message) => message.id === messageId ? { ...message, poll: { ...message.poll, votes: { ...message.poll.votes, you: option } } } : message),
+    } : item))
+  }
+
+  const markAllRead = () => { setConversations((items) => items.map((item) => ({ ...item, unread: 0 }))); showToast('All conversations marked as read') }
+
+  const toggleDesktopNotifications = async () => {
+    if (!notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') { showToast('Browser notification permission was not granted'); return }
+    }
+    if (!notificationsEnabled && typeof Notification === 'undefined') { showToast('Browser notifications are not supported'); return }
+    setNotificationsEnabled((enabled) => !enabled)
+  }
+
   const toggleFavorite = () => {
     setConversations((items) => items.map((item) => item.id === activeId ? { ...item, favorite: !item.favorite } : item))
     showToast(activeConversation.favorite ? 'Removed from starred' : 'Added to starred')
@@ -589,7 +635,7 @@ function App() {
         <div className="conversation-list-wrap">
           <div className="section-label list-section-label">
             <span>{view === 'starred' ? 'SAVED CHATS' : view === 'archive' ? 'ARCHIVED' : view === 'contacts' ? 'ALL PEOPLE' : 'RECENT'}</span>
-            <button onClick={() => setShowNewChat(true)}>New chat <Icon name="plus" size={13} /></button>
+            <span className="list-actions">{view === 'messages' && <button onClick={markAllRead}>Mark all read</button>}<button onClick={() => setShowNewChat(true)}>New chat <Icon name="plus" size={13} /></button></span>
           </div>
           <div className="conversation-list">
             {visibleConversations.length === 0 ? (
@@ -658,8 +704,8 @@ function App() {
                 <div className="settings-section-title"><strong>Notifications</strong><span>Stay in the loop without the noise</span></div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="bell" /></span>
-                  <span className="setting-copy"><strong>Desktop notifications</strong><small>Show a notification when a new message arrives</small></span>
-                  <button className={'toggle-switch' + (notificationsEnabled ? ' on' : '')} onClick={() => setNotificationsEnabled((value) => !value)} aria-pressed={notificationsEnabled}><i /></button>
+                  <span className="setting-copy"><strong>Desktop notifications</strong><small>Use this browser's notification permission on this device</small></span>
+                  <button className={'toggle-switch' + (notificationsEnabled ? ' on' : '')} onClick={toggleDesktopNotifications} aria-pressed={notificationsEnabled}><i /></button>
                 </div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="mic" /></span>
@@ -695,6 +741,7 @@ function App() {
                     <div className="chat-menu">
                       <button onClick={toggleFavorite}><Icon name="star" size={16} />{activeConversation.favorite ? 'Remove from starred' : 'Add to starred'}</button>
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, unread: 1 } : item)); setShowChatMenu(false); showToast('Marked as unread') }}><Icon name="message" size={16} />Mark as unread</button>
+                      <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, muted: !item.muted } : item)); setShowChatMenu(false); showToast(activeConversation.muted ? 'Conversation unmuted' : 'Conversation muted') }}><Icon name="bell" size={16} />{activeConversation.muted ? 'Unmute conversation' : 'Mute conversation'}</button>
                       <button onClick={archiveConversation}><Icon name="archive" size={16} />{activeConversation.archived ? 'Restore conversation' : 'Archive conversation'}</button>
                     </div>
                   )}
@@ -725,7 +772,9 @@ function App() {
                     <div className="message-content">
                       {message.sender && <span className="message-sender">{message.sender}</span>}
                       {message.replyToText && <div className="reply-context"><strong>Replying to</strong><span>{message.replyToText}</span></div>}
-                      {message.type === 'image' ? (
+                      {message.type === 'poll' ? (
+                        <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
+                      ) : message.type === 'image' ? (
                         <button type="button" className={'image-message' + (message.viewOnce ? ' image-view-once' : '')} onClick={() => { if (message.viewOnce && !message.viewed) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, imageData: null } : entry) } : item)) }}>
                           {message.viewOnce && message.viewed ? <span>Opened · image unavailable</span> : message.imageData ? <><img src={message.imageData} alt="Shared image" />{message.viewOnce && <small>View once · open to consume</small>}</> : <span>Image preview is only available in this browser session</span>}
                         </button>
@@ -771,7 +820,8 @@ function App() {
 
             <form className="composer-wrap" onSubmit={handleSend}>
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
-              <div className="composer-options"><label>Disappear <select value={disappearingHours} onChange={(event) => setDisappearingHours(event.target.value)}><option value="0">Off</option><option value="1">1 hour</option><option value="24">24 hours</option><option value="168">7 days</option></select></label><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
+              {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
+              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<label>Disappear <select value={disappearingHours} onChange={(event) => setDisappearingHours(event.target.value)}><option value="0">Off</option><option value="1">1 hour</option><option value="24">24 hours</option><option value="168">7 days</option></select></label><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
@@ -839,6 +889,18 @@ function App() {
         </div>
       )}
 
+      {showGroupCreator && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowGroupCreator(false) }}>
+          <section className="new-chat-modal group-create-modal" role="dialog" aria-modal="true" aria-labelledby="group-create-title">
+            <div className="modal-heading"><div><div className="eyebrow">GROUP CHAT</div><h2 id="group-create-title">Create a group</h2><p>Choose a name and at least one person.</p></div><button className="icon-button" onClick={() => setShowGroupCreator(false)} aria-label="Close group creator"><Icon name="close" /></button></div>
+            <label className="group-name-field">Group name<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="e.g. Weekend plans" maxLength={48} /></label>
+            <div className="group-member-picker"><strong>Add people</strong>{directory.filter((person) => person.status !== 'group').map((person) => <label key={person.id}><input type="checkbox" checked={groupMemberIds.includes(person.id)} onChange={(event) => setGroupMemberIds((ids) => event.target.checked ? [...ids, person.id] : ids.filter((id) => id !== person.id))} /><Avatar person={person} size="sm" /><span>{person.name}</span></label>)}</div>
+            <div className="avatar-picker-actions"><button className="secondary-button" onClick={() => setShowGroupCreator(false)}>Cancel</button><button className="primary-button" onClick={createGroup}>Create group</button></div>
+            <div className="modal-footnote">Group creation is local-only until Firebase membership services are connected.</div>
+          </section>
+        </div>
+      )}
+
       {showNewChat && (
         <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNewChat(false) }}>
           <section className="new-chat-modal" role="dialog" aria-modal="true" aria-labelledby="new-chat-title">
@@ -846,6 +908,7 @@ function App() {
               <div><div className="eyebrow">MAKE A CONNECTION</div><h2 id="new-chat-title">New conversation</h2><p>Who would you like to talk to?</p></div>
               <button className="icon-button" onClick={() => setShowNewChat(false)} aria-label="Close new conversation"><Icon name="close" /></button>
             </div>
+            <button className="create-group-launch" onClick={() => setShowGroupCreator(true)}><Icon name="users" size={16} /> Create a group</button>
             <label className="search-box modal-search"><Icon name="search" size={17} /><input autoFocus value={newChatSearch} onChange={(event) => setNewChatSearch(event.target.value)} placeholder="Find someone by name" /></label>
             <div className="directory-list">
               {filteredDirectory.length ? filteredDirectory.map((person) => (
