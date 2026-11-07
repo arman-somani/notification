@@ -1230,3 +1230,20 @@
 .voice-time { min-width: 34px; color: var(--text-soft); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
 .voice-message-player { width: min(280px, 65vw); height: auto; }
 .voice-preview-player { width: min(220px, 45vw); min-width: 145px; padding: 5px 8px; }
+
+
+/* Voice preview takes over the composer: one send action, no attachment/emoji/mic controls. */
+.composer:has(.composer-voice-preview) { gap:10px; }
+.composer-voice-preview { flex:1 1 auto; width:100%; min-width:0; gap:10px; }
+.composer-voice-preview .voice-preview-player { width:100%; max-width:none; min-width:0; flex:1 1 auto; height:42px; padding:6px 10px; }
+.composer-voice-preview .voice-progress { min-width:40px; }
+.composer-voice-preview .voice-discard-button { display:grid; place-items:center; width:34px; height:34px; min-height:34px; flex:0 0 34px; padding:0; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); color:var(--text-soft); cursor:pointer; }
+.composer-voice-preview .voice-discard-button:hover { background:var(--surface-muted); color:var(--text); }
+.composer-voice-preview .voice-preview-send { flex:0 0 38px; width:38px; height:38px; min-height:38px; margin-left:0; }
+@media (max-width:520px) {
+  .composer:has(.composer-voice-preview) { gap:6px; }
+  .composer-voice-preview { gap:6px; }
+  .composer-voice-preview .voice-preview-player { min-width:0; padding:5px 7px; gap:6px; }
+  .composer-voice-preview .voice-discard-button { width:30px; height:30px; flex-basis:30px; }
+  .composer-voice-preview .voice-preview-send { width:34px; height:34px; min-height:34px; flex-basis:34px; }
+}
