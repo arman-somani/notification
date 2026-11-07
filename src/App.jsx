@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
@@ -356,6 +356,8 @@ function VoiceMessagePlayer({ src, className = '' }) {
   )
 }
 
+const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
+
 function App({ profile, onLogout }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
@@ -590,6 +592,47 @@ function App({ profile, onLogout }) {
   }, [])
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    const friend = friendContacts.find((person) => person.id === activeId)
+    if (!uid || !db || !friend) return undefined
+    const conversationId = directConversationId(uid, friend.id)
+    const messagesQuery = query(
+      collection(db, 'conversations', conversationId, 'messages'),
+      orderBy('createdAt', 'asc'),
+      limit(300),
+    )
+    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+      const messages = snapshot.docs.map((messageDoc) => {
+        const data = messageDoc.data()
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+        return {
+          id: messageDoc.id,
+          from: data.senderId === uid ? 'me' : 'them',
+          senderId: data.senderId,
+          type: data.type || 'text',
+          text: data.text || '',
+          replyToId: data.replyToId,
+          replyToText: data.replyToText,
+          editedAt: data.editedAt?.toDate ? createdAt : data.editedAt,
+          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          status: data.senderId === uid ? 'sent' : 'received',
+        }
+      })
+      setConversations((items) => {
+        const exists = items.some((item) => item.id === activeId)
+        if (!exists) return items
+        return items.map((item) => item.id === activeId
+          ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1]?.text || 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
+          : item)
+      })
+    }, (error) => {
+      setToast(error?.code === 'permission-denied'
+        ? 'Message sync permission denied. Deploy the latest Firestore rules.'
+        : error?.message || 'Could not sync messages.')
+    })
+    return unsubscribe
+  }, [activeId, friendContacts, auth?.currentUser?.uid])
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
     ...friendContacts.filter((person) => !conversations.some((item) => item.id === person.id)),
@@ -678,7 +721,7 @@ function App({ profile, onLogout }) {
     if (view === 'settings') setView('messages')
   }
 
-  const handleSend = (event) => {
+  const handleSend = async (event) => {
     event?.preventDefault()
     const text = messageText.trim()
     if (!text || !activeConversation) return
@@ -687,6 +730,36 @@ function App({ profile, onLogout }) {
       setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
+
+    const uid = auth?.currentUser?.uid
+    const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
+    if (isAcceptedFriend) {
+      const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+      try {
+        const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+        await setDoc(messageRef, {
+          senderId: uid,
+          type: 'text',
+          text,
+          createdAt: serverTimestamp(),
+          ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+        })
+        await setDoc(doc(db, 'conversations', conversationId), {
+          lastMessageAt: serverTimestamp(),
+          lastMessagePreview: text.slice(0, 160),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+        setMessageText('')
+        setReplyTarget(null)
+        messageInputRef.current?.focus()
+      } catch (error) {
+        showToast(error?.code === 'permission-denied'
+          ? 'Firebase denied this message. Check that the latest Firestore rules are deployed.'
+          : error?.message || 'Could not send message. Please try again.')
+      }
+      return
+    }
+
     const message = {
       id: 'm-' + Date.now(), from: 'me', type: 'text', text,
       time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
@@ -1016,27 +1089,55 @@ function App({ profile, onLogout }) {
     }
   }
 
-  const startConversation = (person) => {
-    const exists = conversations.find((item) => item.id === person.id)
-    if (!exists) {
-      const newConversation = {
-        ...person,
-        preview: 'Start a conversation',
-        time: 'Now',
-        lastActivityAt: Date.now(),
-        unread: 0,
-        pinned: false,
-        favorite: false,
-        archived: false,
-        messages: [],
-      }
-      setConversations((items) => [newConversation, ...items])
+  const startConversation = async (person) => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || !friendContacts.some((friend) => friend.id === person.id)) {
+      showToast('You can start a synced conversation after becoming friends.')
+      return
     }
-    setActiveId(person.id)
-    setView('messages')
-    setMobileChatOpen(true)
-    setShowNewChat(false)
-    setNewChatSearch('')
+    const conversationId = directConversationId(uid, person.id)
+    try {
+      await runTransaction(db, async (transaction) => {
+        const conversationRef = doc(db, 'conversations', conversationId)
+        const snapshot = await transaction.get(conversationRef)
+        if (!snapshot.exists()) {
+          transaction.set(conversationRef, {
+            createdBy: uid,
+            memberIds: [uid, person.id].sort(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(person.id)) {
+          throw new Error('This conversation does not have the expected members.')
+        }
+      })
+      const existing = conversations.find((item) => item.id === person.id)
+      if (existing) {
+        setConversations((items) => items.map((item) => item.id === person.id ? { ...item, firebaseConversationId: conversationId } : item))
+      } else {
+        setConversations((items) => [{
+          ...person,
+          firebaseConversationId: conversationId,
+          preview: 'Start a conversation',
+          time: 'Now',
+          lastActivityAt: Date.now(),
+          unread: 0,
+          pinned: false,
+          favorite: false,
+          archived: false,
+          messages: [],
+        }, ...items])
+      }
+      setActiveId(person.id)
+      setView('messages')
+      setMobileChatOpen(true)
+      setShowNewChat(false)
+      setNewChatSearch('')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied'
+        ? 'Firebase denied conversation setup. Deploy the latest Firestore rules and try again.'
+        : error?.message || 'Could not open this conversation.')
+    }
   }
 
   const knownFriendIds = new Set(friendContacts.map((person) => person.id))
