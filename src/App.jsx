@@ -956,7 +956,7 @@ function App() {
 
         <div className="inbox-footer">
           <button className="footer-profile" onClick={() => { setView("settings"); setMobileChatOpen(false) }} aria-label="Open profile settings">
-            <Avatar person={{ avatarId: profileAvatar, initials: 'Y' }} size="footer" />
+            <Avatar person={{ avatarId: profileAvatar, initials: profileName.split(' ').map((part) => part[0]).join('').slice(0, 2) || 'Y' }} size="footer" />
             <span><strong>{profileName}</strong><small>Account profile</small></span>
           </button>
           <button className="icon-button subtle-button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label="Toggle color theme" title="Toggle theme"><Icon name={theme === 'light' ? 'moon' : 'sun'} size={17} /></button>
