@@ -7,6 +7,7 @@ const readList = (key) => {
 export default function AccountPrivacyPanel() {
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('notification-display-name') || 'Your workspace')
   const [username, setUsername] = useState(() => localStorage.getItem('notification-username') || 'notification_user')
+  const [usernameLocked, setUsernameLocked] = useState(() => localStorage.getItem('notification-username-locked') === 'true' || Boolean(localStorage.getItem('notification-username')))
   const [bio, setBio] = useState(() => localStorage.getItem('notification-bio') || '')
   const [messagePrivacy, setMessagePrivacy] = useState(() => localStorage.getItem('notification-message-privacy') || 'everyone')
   const [lastSeenPrivacy, setLastSeenPrivacy] = useState(() => localStorage.getItem('notification-last-seen-privacy') || 'contacts')
@@ -30,7 +31,9 @@ export default function AccountPrivacyPanel() {
   }, [messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, reports])
 
   const saveProfile = () => {
-    const normalized = username.trim().toLowerCase().replace(/^@/, '')
+    const normalized = usernameLocked
+      ? (localStorage.getItem('notification-username') || username).toLowerCase()
+      : username.trim().toLowerCase().replace(/^@/, '')
     const cleanDisplayName = displayName.trim()
     if (!cleanDisplayName) {
       setNotice('Please enter a display name.')
@@ -50,9 +53,11 @@ export default function AccountPrivacyPanel() {
     localStorage.setItem('notification-username-registry', JSON.stringify(nextRegistry))
     localStorage.setItem('notification-display-name', cleanDisplayName)
     localStorage.setItem('notification-username', normalized)
+    localStorage.setItem('notification-username-locked', 'true')
     localStorage.setItem('notification-bio', bio.trim())
     setDisplayName(cleanDisplayName)
     setUsername(normalized)
+    setUsernameLocked(true)
     window.dispatchEvent(new CustomEvent('notification-profile-updated', { detail: { displayName: cleanDisplayName, username: normalized } }))
     setNotice('Profile saved successfully on this device.')
   }
@@ -86,7 +91,7 @@ export default function AccountPrivacyPanel() {
       <div className="settings-section-title"><strong>Profile & privacy</strong><span>Manage your public details, discoverability and contact preferences</span></div>
       <div className="account-fields-grid">
         <label className="account-field">Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={48} /></label>
-        <label className="account-field">Username<input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, ''))} maxLength={20} /><small>@username · 3–20 letters, numbers or underscores</small></label>
+        <label className="account-field">Username<input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, ''))} maxLength={20} readOnly={usernameLocked} aria-readonly={usernameLocked} /><small>{usernameLocked ? 'Username is permanent and cannot be changed after saving.' : '@username · Choose carefully: it cannot be changed after you save your profile.'}</small></label>
         <label className="account-field account-field-wide">Bio<textarea value={bio} onChange={(event) => setBio(event.target.value)} rows={2} maxLength={160} placeholder="A little about you" /></label>
       </div>
       <div className="account-panel-actions"><button className="secondary-button" onClick={saveProfile}>Save profile</button><span className="account-handle-preview">@{username || 'username'}</span></div>
