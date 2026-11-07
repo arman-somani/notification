@@ -242,12 +242,24 @@ function BrandGlyph({ size = 20 }) {
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
-  const [conversations, setConversations] = useState(initialConversations)
+  const [conversations, setConversations] = useState(() => {
+    try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
+  })
   const [activeId, setActiveId] = useState('alex')
   const [view, setView] = useState('messages')
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
-  const [messageText, setMessageText] = useState('')
+  const [messageText, setMessageText] = useState(() => localStorage.getItem('notification-draft-alex') || '')
+  const [selectedMessageId, setSelectedMessageId] = useState(null)
+  const [replyTarget, setReplyTarget] = useState(null)
+  const [editingMessageId, setEditingMessageId] = useState(null)
+  const [forwardMessageId, setForwardMessageId] = useState(null)
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [messageSearch, setMessageSearch] = useState('')
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [disappearingHours, setDisappearingHours] = useState('0')
+  const [viewOnceMode, setViewOnceMode] = useState(false)
+  const [recording, setRecording] = useState(false)
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
   const [showDetails, setShowDetails] = useState(false)
@@ -258,6 +270,7 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [compactMode, setCompactMode] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const mediaRecorderRef = useRef(null)
   const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
@@ -270,6 +283,45 @@ function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('notification-theme', theme)
   }, [theme])
+
+  // Browser preview persistence only; binary media is deliberately session-only.
+  useEffect(() => {
+    try {
+      const safeConversations = conversations.map((conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map(({ imageData, mediaUrl, ...message }) => message),
+      }))
+      localStorage.setItem('notification-conversations', JSON.stringify(safeConversations))
+    } catch { showToast('Local storage is full. Some recent changes may not persist.') }
+  }, [conversations])
+
+  useEffect(() => {
+    setMessageText(localStorage.getItem('notification-draft-' + activeId) || '')
+    setReplyTarget(null); setEditingMessageId(null); setSelectedMessageId(null)
+    setMessageSearch(''); setMessageSearchOpen(false)
+  }, [activeId])
+
+  useEffect(() => {
+    try { localStorage.setItem('notification-draft-' + activeId, messageText) } catch { /* best effort */ }
+  }, [activeId, messageText])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      setConversations((items) => {
+        let changed = false
+        const next = items.map((conversation) => {
+          const messages = conversation.messages.map((message) => {
+            if (message.status === 'scheduled' && message.scheduledAt <= now) { changed = true; return { ...message, status: 'sent', time: 'Just now' } }
+            return message
+          }).filter((message) => { const keep = !message.expiresAt || message.expiresAt > now; if (!keep) changed = true; return keep })
+          return messages.length === conversation.messages.length && !messages.some((message, index) => message !== conversation.messages[index]) ? conversation : { ...conversation, messages }
+        })
+        return changed ? next : items
+      })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
   const directory = useMemo(() => [
@@ -350,36 +402,72 @@ function App() {
     event?.preventDefault()
     const text = messageText.trim()
     if (!text || !activeConversation) return
-    const message = {
-      id: 'm-' + Date.now(),
-      from: 'me',
-      text,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      read: false,
+    if (editingMessageId) {
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
+      setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
-    setConversations((items) => items.map((item) => item.id === activeId
-      ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now' }
-      : item))
-    setMessageText('')
-    messageInputRef.current?.focus()
+    const sendAt = scheduleAt ? new Date(scheduleAt).getTime() : 0
+    if (scheduleAt && (!Number.isFinite(sendAt) || sendAt <= Date.now())) { showToast('Choose a future time for scheduled messages'); return }
+    const message = {
+      id: 'm-' + Date.now(), from: 'me', type: 'text', text,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      status: sendAt ? 'scheduled' : 'sent',
+      ...(sendAt ? { scheduledAt: sendAt } : {}),
+      ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+      ...(Number(disappearingHours) > 0 ? { expiresAt: Date.now() + Number(disappearingHours) * 3600000 } : {}),
+    }
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: sendAt ? 'Scheduled message' : text, time: 'Now' } : item))
+    setMessageText(''); setReplyTarget(null); setScheduleAt(''); messageInputRef.current?.focus()
   }
 
   const handleFile = (event) => {
     const file = event.target.files?.[0]
     if (!file || !activeConversation) return
-    const message = {
-      id: 'f-' + Date.now(),
-      from: 'me',
-      type: 'file',
-      fileName: file.name,
-      fileMeta: file.type || 'Attached file',
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-    }
-    setConversations((items) => items.map((item) => item.id === activeId
-      ? { ...item, messages: [...item.messages, message], preview: 'Attachment: ' + file.name, time: 'Now' }
-      : item))
     event.target.value = ''
-    showToast('Attachment added to this demo conversation')
+    if (!file.type.startsWith('image/')) { showToast('Only image sharing is available here'); return }
+    if (file.size > 3 * 1024 * 1024) { showToast('Choose an image smaller than 3 MB'); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: viewOnceMode, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: viewOnceMode ? 'View-once image' : 'Image', time: 'Now' } : item))
+      setViewOnceMode(false)
+    }
+    reader.onerror = () => showToast('Could not read that image')
+    reader.readAsDataURL(file)
+  }
+
+  const startVoiceRecording = async () => {
+    if (recording) { mediaRecorderRef.current?.stop(); return }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { showToast('Voice recording is not supported in this browser'); return }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream), chunks = []
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        const mediaUrl = URL.createObjectURL(blob)
+        const message = { id: 'voice-' + Date.now(), from: 'me', type: 'audio', mediaUrl, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
+        setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now' } : item))
+        stream.getTracks().forEach((track) => track.stop()); setRecording(false); mediaRecorderRef.current = null
+      }
+      mediaRecorderRef.current = recorder; recorder.start(); setRecording(true)
+    } catch { showToast('Microphone permission was not granted') }
+  }
+
+  const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
+  const beginEdit = (message) => { setEditingMessageId(message.id); setReplyTarget(null); setMessageText(message.text || ''); setSelectedMessageId(null); messageInputRef.current?.focus() }
+  const deleteMessage = (messageId) => {
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.filter((message) => message.id !== messageId) } : item))
+    setSelectedMessageId(null); showToast('Message removed from this browser preview')
+  }
+  const toggleMessageReaction = (messageId) => {
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === messageId ? { ...message, reactions: message.reactions?.includes('👍') ? message.reactions.filter((reaction) => reaction !== '👍') : [...(message.reactions || []), '👍'] } : message) } : item))
+    setSelectedMessageId(null)
+  }
+  const forwardMessageTo = (message, targetId) => {
+    if (!targetId) return
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : message.type === 'audio' ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now' } : item))
+    setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
   const toggleFavorite = () => {
@@ -599,9 +687,7 @@ function App() {
                 <span><strong>{activeConversation.name}</strong><small className={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}>{activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}</small></span>
               </div>
               <div className="chat-header-actions">
-                <button className="icon-button" onClick={() => showToast('Voice calls will be available in a later phase')} aria-label="Start voice call" title="Voice call"><Icon name="phone" /></button>
-                <button className="icon-button" onClick={() => showToast('Video calls will be available in a later phase')} aria-label="Start video call" title="Video call"><Icon name="video" /></button>
-                <span className="action-divider" />
+                <button className="icon-button" onClick={() => setMessageSearchOpen((open) => !open)} aria-label="Search messages" title="Search messages"><Icon name="search" /></button>
                 <button className="icon-button" onClick={() => setShowDetails((open) => !open)} aria-label="Conversation details" title="Conversation details"><Icon name="info" /></button>
                 <div className="menu-anchor">
                   <button className="icon-button" onClick={() => setShowChatMenu((open) => !open)} aria-label="More conversation actions" title="More"><Icon name="more" /></button>
@@ -622,6 +708,7 @@ function App() {
               <span className="context-line" />
             </div>
 
+            {messageSearchOpen && <div className="message-search-bar"><Icon name="search" size={16} /><input autoFocus value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search in this conversation" /><button type="button" onClick={() => { setMessageSearch(''); setMessageSearchOpen(false) }} aria-label="Close message search"><Icon name="close" size={15} /></button></div>}
             <div className="messages-scroll">
               <div className="message-history">
                 {activeConversation.messages.length === 0 ? (
@@ -630,12 +717,21 @@ function App() {
                     <strong>Say hello to {activeConversation.name.split(' ')[0]}</strong>
                     <span>This is the beginning of your conversation.</span>
                   </div>
-                ) : activeConversation.messages.map((message) => (
+                ) : activeConversation.messages.filter((message) => !messageSearch.trim() || (message.text || message.fileName || '').toLowerCase().includes(messageSearch.trim().toLowerCase())).length === 0 ? (
+                  <div className="chat-empty-state"><strong>No matching messages</strong><span>Try another search term.</span></div>
+                ) : activeConversation.messages.filter((message) => !messageSearch.trim() || (message.text || message.fileName || '').toLowerCase().includes(messageSearch.trim().toLowerCase())).map((message) => (
                   <div key={message.id} className={'message-row ' + (message.from === 'me' ? 'message-outgoing' : 'message-incoming')}>
                     {message.from !== 'me' && <Avatar person={{ ...activeConversation, initials: message.sender ? message.sender.split(' ').map((part) => part[0]).join('') : activeConversation.initials, tone: activeConversation.tone }} size="message" />}
                     <div className="message-content">
                       {message.sender && <span className="message-sender">{message.sender}</span>}
-                      {message.type === 'file' ? (
+                      {message.replyToText && <div className="reply-context"><strong>Replying to</strong><span>{message.replyToText}</span></div>}
+                      {message.type === 'image' ? (
+                        <button type="button" className={'image-message' + (message.viewOnce ? ' image-view-once' : '')} onClick={() => { if (message.viewOnce && !message.viewed) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, imageData: null } : entry) } : item)) }}>
+                          {message.viewOnce && message.viewed ? <span>Opened · image unavailable</span> : message.imageData ? <><img src={message.imageData} alt="Shared image" />{message.viewOnce && <small>View once · open to consume</small>}</> : <span>Image preview is only available in this browser session</span>}
+                        </button>
+                      ) : message.type === 'audio' ? (
+                        message.mediaUrl ? <audio className="voice-message-player" controls src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
+                      ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
                           <span className="file-copy"><strong>{message.fileName}</strong><small>{message.fileMeta}</small></span>
@@ -644,7 +740,17 @@ function App() {
                       ) : (
                         <div className="message-bubble">{message.text}</div>
                       )}
-                      <span className="message-meta">{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}</span>
+                      {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
+                      <span className="message-meta">{message.status === 'scheduled' ? 'Scheduled · ' : ''}{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
+                      <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
+                      {selectedMessageId === message.id && <div className="message-action-row">
+                        <button type="button" onClick={() => beginReply(message)}>Reply</button><button type="button" onClick={() => toggleMessageReaction(message.id)}>👍 React</button>
+                        {message.from === 'me' && message.type === 'text' && message.status !== 'scheduled' && <button type="button" onClick={() => beginEdit(message)}>Edit</button>}
+                        <button type="button" onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, pinned: !entry.pinned } : entry) } : item))}>{message.pinned ? 'Unpin' : 'Pin'}</button>
+                        <button type="button" onClick={() => setForwardMessageId((current) => current === message.id ? null : message.id)}>Forward</button>
+                        {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
+                      </div>}
+                      {forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
@@ -664,15 +770,18 @@ function App() {
             </div>
 
             <form className="composer-wrap" onSubmit={handleSend}>
+              {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
+              <div className="composer-options"><label>Disappear <select value={disappearingHours} onChange={(event) => setDisappearingHours(event.target.value)}><option value="0">Off</option><option value="1">1 hour</option><option value="24">24 hours</option><option value="168">7 days</option></select></label><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
               <div className="composer">
-                <input ref={fileInputRef} type="file" className="visually-hidden" onChange={handleFile} />
-                <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" title="Attach file"><Icon name="paperclip" size={19} /></button>
+                <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
+                <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
                 <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
                 <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
-                <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' :)')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>
+                <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>
+                <button type="button" className={'composer-action voice-record-button' + (recording ? ' recording' : '')} onClick={startVoiceRecording} aria-label={recording ? 'Stop voice recording' : 'Record a voice message'} title={recording ? 'Stop recording' : 'Record voice message'}><Icon name="mic" size={19} /></button>
                 <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
               </div>
-              <div className="composer-footnote"><span>Messages are shown here as a local preview</span><span><Icon name="shield" size={12} /> Private by design</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… select the mic to finish' : scheduleAt ? 'Your message will be scheduled' : 'Drafts save automatically in this browser'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
             </form>
           </section>
         ) : (
@@ -688,7 +797,6 @@ function App() {
             <strong>{activeConversation.name}</strong>
             <span>{activeConversation.status === 'online' ? 'Active now' : 'Notification member'}</span>
             <div className="details-actions">
-              <button onClick={() => showToast('Voice calls are coming soon')}><Icon name="phone" size={17} />Call</button>
               <button onClick={toggleFavorite}><Icon name="star" size={17} />{activeConversation.favorite ? 'Starred' : 'Star'}</button>
             </div>
           </div>
