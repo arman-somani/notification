@@ -20,7 +20,9 @@ service cloud.firestore {
         && request.auth.uid == uid
         && request.resource.data.keys().hasAll(['displayName', 'username', 'avatarId', 'createdAt', 'updatedAt'])
         && request.resource.data.username is string
-        && request.resource.data.username.matches('^[a-z0-9_]{3,20}
+        && request.resource.data.username.matches('^[a-z0-9_]{3,20}$')
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == request.auth.uid
+        && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
       allow update: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -53,7 +55,13 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn()
-        && normalizedUsername.matches('^[a-z0-9_]{3,20}
+        && normalizedUsername.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == normalizedUsername;
+      // Claimed usernames are permanent; only a trusted admin migration may release one.
+      allow update, delete: if false;
+    }
 
     match /conversations/{conversationId} {
       allow read: if isConversationMember(conversationId);
