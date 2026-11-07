@@ -17,6 +17,10 @@ export default function AccountPrivacyPanel() {
   const [storyText, setStoryText] = useState('')
   const [stories, setStories] = useState(() => readList('notification-stories').filter((story) => story.expiresAt > Date.now()))
   const [notice, setNotice] = useState('')
+  const [reportUsername, setReportUsername] = useState('')
+  const [reportReason, setReportReason] = useState('spam')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reports, setReports] = useState(() => readList('notification-local-reports'))
 
   useEffect(() => {
     localStorage.setItem('notification-display-name', displayName)
@@ -28,7 +32,8 @@ export default function AccountPrivacyPanel() {
     localStorage.setItem('notification-discoverable', String(discoverable))
     localStorage.setItem('notification-blocked-handles', JSON.stringify(blockedHandles))
     localStorage.setItem('notification-stories', JSON.stringify(stories))
-  }, [displayName, username, bio, messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, stories])
+    localStorage.setItem('notification-local-reports', JSON.stringify(reports))
+  }, [displayName, username, bio, messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, stories, reports])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -43,9 +48,15 @@ export default function AccountPrivacyPanel() {
       setNotice('Username must be 3–20 characters using letters, numbers or underscores.')
       return
     }
+    const reserved = readList('notification-username-registry').map((item) => String(item).toLowerCase())
+    if (reserved.includes(normalized) && normalized !== username.toLowerCase()) {
+      setNotice('That username is already used on this device. Choose another one.')
+      return
+    }
+    localStorage.setItem('notification-username-registry', JSON.stringify([...new Set([...reserved, normalized])]))
     setUsername(normalized)
     setDisplayName(displayName.trim() || 'Your workspace')
-    setNotice('Profile saved on this device. Global username uniqueness will be enforced by Firebase.')
+    setNotice('Profile saved on this device. This device checks a local username list only; global uniqueness still requires Firebase.')
   }
 
   const addBlockedHandle = () => {
@@ -61,6 +72,15 @@ export default function AccountPrivacyPanel() {
     setBlockedHandles((items) => items.includes(handle) ? items : [...items, handle])
     setBlockedInput('')
     setNotice('Blocked list updated on this device only.')
+  }
+
+  const submitReport = () => {
+    const target = reportUsername.trim().toLowerCase().replace(/^@/, '')
+    if (!/^[a-z0-9_]{3,20}$/.test(target)) { setNotice('Enter a valid username to report.'); return }
+    if (target === username.toLowerCase()) { setNotice('You cannot report your own account.'); return }
+    setReports((items) => [{ id: 'report-' + Date.now(), target, reason: reportReason, details: reportDetails.trim().slice(0, 1000), createdAt: Date.now(), status: 'saved locally' }, ...items])
+    setReportUsername(''); setReportDetails('')
+    setNotice('Report saved on this device. It has not been sent to a moderation team.')
   }
 
   const shareStory = () => {
@@ -95,9 +115,18 @@ export default function AccountPrivacyPanel() {
       <div className="account-subheading"><strong>Stories & status</strong><span>Text status updates expire after 24 hours.</span></div>
       <div className="account-inline-input"><input value={storyText} onChange={(event) => setStoryText(event.target.value)} maxLength={180} placeholder="Share a short status…" /><button className="secondary-button" onClick={shareStory} disabled={!storyText.trim()}>Share</button></div>
       {stories.length > 0 && <div className="local-story-list">{stories.map((story) => <div key={story.id}><span>{story.text}</span><small>Expires {new Date(story.expiresAt).toLocaleString()}</small></div>)}</div>}
+      <div className="account-divider" />
+      <div className="account-subheading"><strong>Report an account</strong><span>Report impersonation, spam, harassment or other abuse.</span></div>
+      <div className="account-report-form">
+        <label className="account-field">Username<input value={reportUsername} onChange={(event) => setReportUsername(event.target.value.replace(/^@/, ''))} maxLength={20} placeholder="username to report" /></label>
+        <label className="account-field">Reason<select value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="spam">Spam or scam</option><option value="harassment">Harassment or bullying</option><option value="impersonation">Impersonation</option><option value="inappropriate">Inappropriate content</option><option value="other">Other</option></select></label>
+        <label className="account-field account-field-wide">Additional details<textarea value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} rows={2} maxLength={1000} placeholder="Add context (optional)" /></label>
+        <button className="secondary-button" type="button" onClick={submitReport}>Submit report</button>
+      </div>
+      {reports.length > 0 && <div className="local-story-list"><strong>Reports saved on this device</strong>{reports.slice(0, 5).map((report) => <div key={report.id}><span>@{report.target} · {report.reason}</span><small>{new Date(report.createdAt).toLocaleString()} · {report.status}</small></div>)}</div>}
       <div className="verified-note"><span className="verified-label">✓ Verified accounts</span> are assigned by administrators after review. Verification cannot be self-selected.</div>
       {notice && <p className="account-notice" role="status">{notice}</p>}
-      <p className="account-security-note">These settings currently stay in this browser. Firebase Authentication, uniqueness checks, blocking, contact privacy, stories visibility and verified badges need trusted server-side enforcement before public launch.</p>
+      <p className="account-security-note">These settings currently stay in this browser. Firebase Authentication, global username reservations, user discovery, report delivery/review, blocking, contact privacy, stories visibility and verified badges still need trusted server-side enforcement before public launch.</p>
     </section>
   )
 }
