@@ -347,7 +347,7 @@ function VoiceMessagePlayer({ src, className = '' }) {
   )
 }
 
-function App() {
+function App({ profile, onLogout }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
     try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
@@ -395,8 +395,8 @@ function App() {
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const waveformFrameRef = useRef(null)
-  const [profileName, setProfileName] = useState(() => localStorage.getItem('notification-display-name') || 'Your workspace')
-  const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
+  const [profileName, setProfileName] = useState(() => profile?.displayName || localStorage.getItem('notification-display-name') || 'Your workspace')
+  const [profileAvatar, setProfileAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [avatarPickerGender, setAvatarPickerGender] = useState(() => (localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male')
@@ -416,6 +416,15 @@ function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('notification-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    if (!profile) return
+    setProfileName(profile.displayName || 'Your workspace')
+    setProfileAvatar(profile.avatarId || 'male-01')
+    localStorage.setItem('notification-display-name', profile.displayName || 'Your workspace')
+    localStorage.setItem('notification-username', profile.username || '')
+    localStorage.setItem('notification-username-locked', 'true')
+  }, [profile])
 
   useEffect(() => {
     const syncProfile = (event) => {
@@ -877,7 +886,7 @@ function App() {
               <strong>{profileName}</strong>
               <span>Available</span>
               <span className="profile-avatar-lock"><Icon name="shield" size={13} /> Preset profile avatar</span>
-              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>
+              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>{onLogout && <button onClick={onLogout}><Icon name="logout" size={14} /> Sign out</button>}
             </div>
           )}
         </div>
