@@ -945,3 +945,36 @@
 .poll-card > button { display:flex; justify-content:space-between; gap:12px; padding:8px 9px; border:1px solid var(--line); border-radius:7px; background:var(--surface-soft); color:var(--text); text-align:left; font:inherit; font-size:10px; cursor:pointer; }
 .poll-card > button.voted { border-color:var(--text-soft); background:var(--surface-muted); }
 .poll-card > button small { color:var(--text-faint); white-space:nowrap; }
+
+
+/* Local profile, privacy and story settings */
+.account-privacy-panel { display:grid; gap:14px; }
+.account-fields-grid,.account-privacy-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.account-field { display:grid; gap:6px; min-width:0; color:var(--text-soft); font-size:11px; font-weight:600; }
+.account-field input,.account-field textarea,.account-field select,.account-inline-input input {
+  width:100%; min-width:0; padding:10px 11px; border:1px solid var(--line); border-radius:8px;
+  background:var(--surface); color:var(--text); font:inherit; font-size:11px; font-weight:400;
+}
+.account-field textarea { resize:vertical; }
+.account-field small { color:var(--text-faint); font-size:9px; font-weight:400; }
+.account-field-wide { grid-column:1 / -1; }
+.account-panel-actions { display:flex; align-items:center; gap:12px; }
+.account-handle-preview { color:var(--text-faint); font-size:10px; }
+.account-divider { height:1px; background:var(--line); margin:3px 0; }
+.account-discoverability { display:flex; align-items:center; gap:8px; color:var(--text-soft); font-size:11px; }
+.account-discoverability input { accent-color:var(--text); }
+.account-subheading { display:grid; gap:3px; }
+.account-subheading strong { color:var(--text); font-size:12px; }
+.account-subheading span,.account-muted { margin:0; color:var(--text-faint); font-size:10px; }
+.account-inline-input { display:flex; gap:8px; }
+.account-inline-input button { flex:0 0 auto; }
+.blocked-handle-list { display:flex; flex-wrap:wrap; gap:7px; }
+.blocked-handle-list span { display:inline-flex; align-items:center; gap:7px; padding:5px 8px; border:1px solid var(--line); border-radius:18px; color:var(--text-soft); font-size:10px; }
+.blocked-handle-list button { border:0; background:transparent; color:var(--text-faint); cursor:pointer; }
+.local-story-list { display:grid; gap:7px; }
+.local-story-list > div { display:grid; gap:4px; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-soft); color:var(--text); font-size:11px; }
+.local-story-list small { color:var(--text-faint); font-size:9px; }
+.verified-note,.account-security-note { margin:0; color:var(--text-faint); font-size:10px; line-height:1.5; }
+.account-notice { margin:0; color:var(--text-soft); font-size:10px; }
+.verified-label { display:inline-flex; align-items:center; gap:4px; color:#218b57; font-size:10px; font-weight:700; }
+@media (max-width:760px) { .account-fields-grid,.account-privacy-grid { grid-template-columns:1fr; } .account-field-wide { grid-column:auto; } }
