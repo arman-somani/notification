@@ -14,7 +14,7 @@ This guide prepares the existing React/Vite app for its first real backend conne
 - **Authentication:** Get started → Sign-in method → enable Email/Password.
 - **Cloud Firestore:** Create database and choose a region deliberately.
 - **Realtime Database:** Create database in locked mode.
-- **Storage:** Get started in locked mode.
+- **Storage:** Not enabled. The Firebase Spark plan requires a billing upgrade for Firebase Storage, so keep image/voice media on the separately configured ImageKit service. Do not upgrade Firebase to Blaze for this setup.
 
 Use a nearby supported region for the services where practical. Do not deploy the repository's current rules yet; they are scaffolding and need tightening and emulator tests first.
 
@@ -29,18 +29,23 @@ In your local project folder D:\Projects\Notification, create .env.local by copy
     VITE_FIREBASE_MESSAGING_SENDER_ID=...
     VITE_FIREBASE_APP_ID=...
     VITE_FIREBASE_DATABASE_URL=...
+    VITE_NOTIFICATION_API_URL=https://notification-api.mediatoolkit.workers.dev
 
-The Realtime Database URL is shown in the Firebase Console under Realtime Database. .env.local is ignored by Git. Never put service-account credentials or Admin SDK private keys in a VITE_* variable.
+The Realtime Database URL is shown in the Firebase Console under Realtime Database. .env.local is ignored by Git. Never put service-account credentials, Admin SDK private keys, or the ImageKit private key in a VITE_* variable. The Notification API URL is public; Worker secrets stay in Cloudflare.
 
 After creating or changing .env.local, restart Vite:
 
     npm run dev
 
-## 4. Send the client configuration for integration
+## 4. Configure the Cloudflare Worker URL
 
-Paste the seven Web App values into the ChatGPT conversation. Do not send passwords, service-account keys, private keys, or user data.
+The deployed Worker base URL is `https://notification-api.mediatoolkit.workers.dev`. Its `/health` endpoint has returned the expected health response. Add the base URL to `.env.local` as `VITE_NOTIFICATION_API_URL` (without `/health`). The health check confirms deployment only; Firebase-authenticated ImageKit uploads still need security hardening and end-to-end testing.
 
-## 5. Implementation sequence
+## 5. Keep credentials private
+
+Do not paste passwords, service-account keys, private keys, or user data into the repository. The ImageKit private key belongs only in Cloudflare Worker Secrets. Firebase Web App configuration and the Worker URL are client configuration, not server secrets.
+
+## 6. Implementation sequence
 
 1. Install the Firebase Web SDK and initialize Auth, Firestore, Realtime Database and Storage.
 2. Add registration, login, logout, auth persistence and a protected app session.
