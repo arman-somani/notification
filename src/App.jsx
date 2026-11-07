@@ -839,6 +839,19 @@ function App({ profile, onLogout }) {
     showToast(activeConversation.archived ? 'Conversation restored' : 'Conversation archived')
   }
 
+  const leaveGroup = () => {
+    if (!activeConversation || activeConversation.status !== 'group') return
+    const groupName = activeConversation.name
+    const remaining = conversations.filter((item) => item.id !== activeId)
+    setConversations(remaining)
+    setActiveId(remaining.find((item) => !item.archived)?.id || remaining[0]?.id || '')
+    setShowChatMenu(false)
+    setShowDetails(false)
+    setMobileChatOpen(false)
+    setView('messages')
+    showToast(`You left ${groupName}`)
+  }
+
   const startConversation = (person) => {
     const exists = conversations.find((item) => item.id === person.id)
     if (!exists) {
@@ -1054,6 +1067,7 @@ function App({ profile, onLogout }) {
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, unread: 1 } : item)); setShowChatMenu(false); showToast('Marked as unread') }}><Icon name="message" size={16} />Mark as unread</button>
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, muted: !item.muted } : item)); setShowChatMenu(false); showToast(activeConversation.muted ? 'Conversation unmuted' : 'Conversation muted') }}><Icon name="bell" size={16} />{activeConversation.muted ? 'Unmute conversation' : 'Mute conversation'}</button>
                       <button onClick={archiveConversation}><Icon name="archive" size={16} />{activeConversation.archived ? 'Restore conversation' : 'Archive conversation'}</button>
+                      {activeConversation.status === 'group' && <button className="danger-menu-item" onClick={leaveGroup}><Icon name="logout" size={16} />Leave group</button>}
                     </div>
                   )}
                 </div>
