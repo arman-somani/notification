@@ -137,6 +137,13 @@ const initialConversations = [
 
 const MESSAGE_RETENTION_MS = 86400000
 
+const getConversationActivity = (conversation) => {
+  if (Number.isFinite(conversation.lastActivityAt)) return conversation.lastActivityAt
+  const lastMessageId = conversation.messages?.[conversation.messages.length - 1]?.id || ''
+  const timestampMatch = String(lastMessageId).match(/(?:m|img|voice|fwd|poll)-(\\d+)/)
+  return timestampMatch ? Number(timestampMatch[1]) : 0
+}
+
 // Treat every audio-backed message as a voice message, even if its type metadata differs.
 const isAudioMessage = (message) => message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
 
@@ -492,7 +499,7 @@ function App({ profile, onLogout }) {
     if (listFilter === 'unread') items = items.filter((item) => item.unread > 0)
     const query = search.trim().toLowerCase()
     if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
-    return [...items].sort((a, b) => Number(b.pinned) - Number(a.pinned))
+    return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
   }, [conversations, directory, listFilter, search, view])
 
   const showToast = (message) => {
@@ -580,7 +587,7 @@ function App({ profile, onLogout }) {
       status: 'sent',
       ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
     }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now' } : item))
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now', lastActivityAt: Date.now() } : item))
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
@@ -593,7 +600,7 @@ function App({ profile, onLogout }) {
     const reader = new FileReader()
     reader.onload = () => {
       const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: true, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'View-once image', time: 'Now' } : item))
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'View-once image', time: 'Now', lastActivityAt: Date.now() } : item))
     }
     reader.onerror = () => showToast('Could not read that image')
     reader.readAsDataURL(file)
@@ -738,7 +745,7 @@ function App({ profile, onLogout }) {
       status: 'sent',
     }
     setConversations((items) => items.map((item) => item.id === activeId
-      ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now' }
+      ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now', lastActivityAt: Date.now() }
       : item))
     setRecordingPreview(null)
   }
@@ -763,7 +770,7 @@ function App({ profile, onLogout }) {
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
-    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : isAudioMessage(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now' } : item))
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : isAudioMessage(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
@@ -786,7 +793,7 @@ function App({ profile, onLogout }) {
     if (activeConversation?.status !== 'group') { showToast('Polls are available in group chats'); return }
     if (!question || options.length < 2) { showToast('Add a question and at least two options'); return }
     const message = { id: 'poll-' + Date.now(), from: 'me', type: 'poll', poll: { question, options, votes: {} }, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'Poll: ' + question, time: 'Now' } : item))
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'Poll: ' + question, time: 'Now', lastActivityAt: Date.now() } : item))
     setPollQuestion(''); setPollOptions(''); setShowPollComposer(false)
   }
 
@@ -839,6 +846,7 @@ function App({ profile, onLogout }) {
         ...person,
         preview: 'Start a conversation',
         time: 'Now',
+        lastActivityAt: Date.now(),
         unread: 0,
         pinned: false,
         favorite: false,
