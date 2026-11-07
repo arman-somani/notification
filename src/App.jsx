@@ -1018,10 +1018,22 @@ function App() {
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
                         message.from === 'me' ? (
-                          <div className="image-message image-sent-preview">
-                            {message.imageData ? <img src={message.imageData} alt="Image you sent" /> : <span>Image sent</span>}
-                            <small><Icon name="shield" size={11} /> Sent · recipient can open once</small>
-                          </div>
+                          message.senderViewed ? (
+                            <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>You opened this image · unavailable</span></div>
+                          ) : (
+                            <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
+                              if (!message.imageData || message.senderViewed) return
+                              setViewOnceImage({ id: message.id, src: message.imageData, senderView: true })
+                              setConversations((items) => items.map((item) => item.id === activeId ? {
+                                ...item,
+                                messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, senderViewed: true, senderOpenedAt: Date.now() } : entry),
+                              } : item))
+                            }}>
+                              <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
+                              <strong>{message.imageData ? 'Your sent image' : 'Image unavailable'}</strong>
+                              <small>{message.imageData ? 'Open once · you cannot reopen it after closing' : 'Image bytes are not stored in this browser preview'}</small>
+                            </button>
+                          )
                         ) : message.viewed ? (
                           <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>Opened · image unavailable</span></div>
                         ) : (
@@ -1169,13 +1181,13 @@ function App() {
       {viewOnceImage && (
         <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
           const openedId = viewOnceImage.id
-          setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
           setViewOnceImage(null)
         } }}>
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
             <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
               const openedId = viewOnceImage.id
-              setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
               setViewOnceImage(null)
             }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
             <img src={viewOnceImage.src} alt="Opened view-once image" />
