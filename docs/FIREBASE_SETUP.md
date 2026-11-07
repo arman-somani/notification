@@ -47,7 +47,7 @@ Do not paste passwords, service-account keys, private keys, or user data into th
 
 ## 6. Implementation sequence
 
-1. Install the Firebase Web SDK and initialize Auth, Firestore, Realtime Database and Storage.
+1. Install the Firebase Web SDK and initialize Auth, Firestore and Realtime Database. Keep image and voice media on ImageKit; do not initialize Firebase Storage for this Spark-plan setup.
 2. Add registration, login, logout, auth persistence and a protected app session.
 3. Reserve normalized usernames transactionally so two accounts cannot claim the same handle.
 4. Move profiles and conversation data into Firestore.
