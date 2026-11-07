@@ -153,6 +153,11 @@
 .search-box input::placeholder { color: var(--text-faint); }
 .search-box kbd { width: 18px; height: 19px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text-faint); font: 10px var(--font-sans); background: var(--surface); }
 .filter-row { display: flex; gap: 6px; padding: 8px 20px 0; }
+.inbox-filter-row { align-items: center; flex-wrap: nowrap; }
+.inbox-filter-row .filter-chip { white-space: nowrap; }
+.request-filter-chip { margin-left: auto; }
+.request-count { min-width: 15px; height: 15px; display: inline-grid; place-items: center; padding: 0 4px; border-radius: 6px; background: var(--surface-muted); color: var(--text-soft) !important; font-size: 9px !important; font-weight: 700; }
+.request-count.has-requests { background: var(--text); color: var(--surface) !important; }
 .friend-filter-row { margin-top: -5px; }
 .friend-filter-row .filter-chip { display: inline-flex; align-items: center; gap: 6px; }
 .sidebar-friend-section { margin: 4px 0 10px; padding: 9px 8px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
