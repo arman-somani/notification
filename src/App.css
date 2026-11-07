@@ -547,3 +547,22 @@
   .online-people { padding-top: 9px; }
   .conversation-item { padding-block: 8px; }
 }
+
+
+/* Global interface scale: 110%, while keeping the viewport fully covered */
+.app-shell {
+  zoom: 1.1;
+  width: calc(100vw / 1.1);
+  height: calc(100svh / 1.1);
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    width: calc(100vw / 1.1);
+    height: calc(100svh / 1.1);
+    margin: 0;
+  }
+}
