@@ -23,8 +23,6 @@
 - [ ] Search message history
 - [ ] Unread counters and mark-as-unread
 - [ ] Browser voice-note recording and playback
-- [ ] Persistent drafts per conversation
-- [ ] Scheduled messages
 - [ ] Fixed disappearing-message policy: delete 24 hours after the recipient first sees the message; no user-selectable duration
 - [ ] Server-enforced expiry timestamp and cleanup
 
