@@ -258,6 +258,28 @@ function Avatar({ person, size = 'md', showStatus = false }) {
   )
 }
 
+// Shared identity UI keeps direct chats and groups visually consistent.
+function ConversationIdentity({ person, subtitle, subtitleClass = '', size = 'header', showStatus = true, className = 'conversation-identity' }) {
+  return (
+    <div className={className}>
+      <Avatar person={person} size={size} showStatus={showStatus} />
+      <span><strong>{person.name}</strong>{subtitle && <small className={subtitleClass}>{subtitle}</small>}</span>
+    </div>
+  )
+}
+
+function ConversationListItem({ conversation, active, onSelect }) {
+  return (
+    <button type="button" className={'conversation-item' + (active ? ' active' : '')} onClick={onSelect}>
+      <Avatar person={conversation} size="lg" showStatus />
+      <span className="conversation-copy">
+        <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
+        <span className="conversation-bottomline"><span className="conversation-preview">{conversation.preview}</span>{conversation.unread > 0 && <i className="unread-count">{conversation.unread}</i>}</span>
+      </span>
+    </button>
+  )
+}
+
 function BrandGlyph({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -901,13 +923,7 @@ function App() {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <button key={conversation.id} className={'conversation-item' + (activeId === conversation.id ? ' active' : '')} onClick={() => view === 'contacts' ? startConversation(conversation) : selectConversation(conversation.id)}>
-                <Avatar person={conversation} size="lg" showStatus />
-                <span className="conversation-copy">
-                  <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
-                  <span className="conversation-bottomline"><span className="conversation-preview">{conversation.preview}</span>{conversation.unread > 0 && <i className="unread-count">{conversation.unread}</i>}</span>
-                </span>
-              </button>
+              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => view === 'contacts' ? startConversation(conversation) : selectConversation(conversation.id)} />
             ))}
           </div>
         </div>
@@ -984,10 +1000,14 @@ function App() {
           <section className="chat-view">
             <header className="chat-header">
               <button className="mobile-back icon-button" onClick={() => setMobileChatOpen(false)} aria-label="Back to conversations"><Icon name="arrowLeft" /></button>
-              <div className="chat-person">
-                <Avatar person={activeConversation} size="header" showStatus />
-                <span><strong>{activeConversation.name}</strong><small className={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}>{activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}</small></span>
-              </div>
+              <ConversationIdentity
+                className="chat-person"
+                person={activeConversation}
+                size="header"
+                showStatus
+                subtitle={activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}
+                subtitleClass={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}
+              />
               <div className="chat-header-actions">
                 <button className="icon-button" onClick={() => setMessageSearchOpen((open) => !open)} aria-label="Search messages" title="Search messages"><Icon name="search" /></button>
                 <button className="icon-button" onClick={() => setShowDetails((open) => !open)} aria-label="Conversation details" title="Conversation details"><Icon name="info" /></button>
@@ -1024,7 +1044,7 @@ function App() {
                   <div className="chat-empty-state"><strong>No matching messages</strong><span>Try another search term.</span></div>
                 ) : activeConversation.messages.filter((message) => !messageSearch.trim() || (message.text || message.fileName || '').toLowerCase().includes(messageSearch.trim().toLowerCase())).map((message) => (
                   <div key={message.id} className={'message-row ' + (message.from === 'me' ? 'message-outgoing' : 'message-incoming')}>
-                    {message.from !== 'me' && <Avatar person={{ ...activeConversation, initials: message.sender ? message.sender.split(' ').map((part) => part[0]).join('') : activeConversation.initials, tone: activeConversation.tone }} size="message" />}
+                    {message.from !== 'me' && <Avatar person={activeConversation.status === 'group' && message.sender ? (directory.find((person) => person.name === message.sender) || { name: message.sender, initials: message.sender.split(' ').map((part) => part[0]).join('').slice(0, 2), tone: 2 }) : activeConversation} size="message" showStatus={activeConversation.status !== 'group'} />}
                     <div className="message-content">
                       {message.sender && <span className="message-sender">{message.sender}</span>}
                       {message.replyToText && <div className="reply-context"><strong>Replying to</strong><span>{message.replyToText}</span></div>}
@@ -1214,9 +1234,14 @@ function App() {
         <aside className="details-panel" aria-label="User information panel">
           <div className="details-header"><div><span className="eyebrow">PROFILE</span><strong>Contact information</strong></div><button className="icon-button" onClick={() => setShowDetails(false)} aria-label="Close details"><Icon name="close" /></button></div>
           <div className="details-person">
-            <Avatar person={activeConversation} size="profile" showStatus />
-            <strong>{activeConversation.name}</strong>
-            <span className="details-status">{activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? 'Group conversation' : 'Offline'}</span>
+            <ConversationIdentity
+              className="details-person-identity"
+              person={activeConversation}
+              size="profile"
+              showStatus
+              subtitle={activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Offline'}
+              subtitleClass="details-status"
+            />
             <div className="details-actions">
               <button onClick={toggleFavorite}><Icon name="star" size={17} />{activeConversation.favorite ? 'Starred' : 'Star'}</button>
             </div>
