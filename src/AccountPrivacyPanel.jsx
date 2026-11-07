@@ -21,16 +21,13 @@ export default function AccountPrivacyPanel() {
   const [reports, setReports] = useState(() => readList('notification-local-reports'))
 
   useEffect(() => {
-    localStorage.setItem('notification-display-name', displayName)
-    localStorage.setItem('notification-username', username)
-    localStorage.setItem('notification-bio', bio)
     localStorage.setItem('notification-message-privacy', messagePrivacy)
     localStorage.setItem('notification-last-seen-privacy', lastSeenPrivacy)
     localStorage.setItem('notification-group-invite-privacy', groupInvitePrivacy)
     localStorage.setItem('notification-discoverable', String(discoverable))
     localStorage.setItem('notification-blocked-handles', JSON.stringify(blockedHandles))
     localStorage.setItem('notification-local-reports', JSON.stringify(reports))
-  }, [displayName, username, bio, messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, reports])
+  }, [messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, reports])
 
   const saveProfile = () => {
     const normalized = username.trim().toLowerCase().replace(/^@/, '')
