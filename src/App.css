@@ -1301,3 +1301,7 @@
 .composer-emoji-grid button:hover,.composer-emoji-grid button:focus-visible { background:var(--surface-muted); transform:scale(1.08); outline:none; }
 @media (max-width:520px) { .composer-emoji-picker { right:-48px; width:min(290px,calc(100vw - 24px)); } .composer-emoji-grid button { font-size:20px; } }
 @media (prefers-reduced-motion:reduce) { .composer-emoji-picker { animation:none; } .composer-emoji-grid button { transition:none; } }
+.account-report-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: end; }
+.account-report-form .account-field-wide { grid-column: 1 / -1; }
+.account-report-form > button { justify-self: start; }
+@media (max-width: 560px) { .account-report-form { grid-template-columns: 1fr; } .account-report-form .account-field-wide { grid-column: auto; } }
