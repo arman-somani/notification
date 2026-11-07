@@ -4,7 +4,7 @@
 - Target: complete messaging platform.
 - Voice/video calling: excluded.
 - AI features: excluded.
-- Images: normal image sharing plus a view-once mode.
+- All shared images are view-once by default; users have no normal-image or repeat-view option.
 - Voice messages remain in scope as browser-recorded audio.
 - Preserve the existing monochrome Notification UI.
 
@@ -35,12 +35,13 @@
 - Trusted backend timestamps and cleanup enforce the rule across devices.
 
 ## Image sharing
-- [ ] Normal image messages with previews
-- [ ] View-once image messages
-- [ ] Recipient explicitly opens a view-once image
+- [ ] Every shared image is a view-once image automatically
+- [ ] No sender/recipient toggle to disable view-once
+- [ ] Recipient sees a locked preview and explicitly opens the image once
 - [ ] Server atomically consumes the first successful open
 - [ ] Consumed/expired placeholder replaces the image
-- [ ] No permanent public download URL for view-once images
+- [ ] Sender cannot consume the recipient's one open
+- [ ] No permanent public download URL for any shared image
 
 Security note: a web app cannot prevent screenshots, screen recording, or photographing the screen. View-once means one successful in-app open, not a guarantee that the recipient cannot make a copy.
 
