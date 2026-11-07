@@ -135,6 +135,8 @@ const initialConversations = [
   },
 ]
 
+const MESSAGE_RETENTION_MS = 86400000
+
 const directoryPeople = [
   { id: 'nina', avatarId: 'female-04', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
   { id: 'daniel', avatarId: 'male-02', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
@@ -258,7 +260,6 @@ function App() {
   const [messageSearchOpen, setMessageSearchOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
   const [scheduleAt, setScheduleAt] = useState('')
-  const [disappearingHours, setDisappearingHours] = useState('0')
   const [viewOnceMode, setViewOnceMode] = useState(false)
   const [recording, setRecording] = useState(false)
   const [showNewChat, setShowNewChat] = useState(false)
@@ -393,12 +394,29 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [activeId, activeConversation?.messages?.length])
 
+  // A message's fixed 24-hour retention clock starts only when its recipient sees it.
+  // This browser preview can mark incoming messages as seen when their conversation opens.
+  useEffect(() => {
+    const seenAt = Date.now()
+    setConversations((items) => items.map((item) => {
+      if (item.id !== activeId) return item
+      let conversationChanged = item.unread !== 0
+      const messages = item.messages.map((message) => {
+        const wasSeenByRecipient = message.from === 'me' && message.read === true
+        const isReceivedHere = message.from !== 'me'
+        if (message.status === 'scheduled' || message.seenAt || (!wasSeenByRecipient && !isReceivedHere)) return message
+        conversationChanged = true
+        return { ...message, seenAt, expiresAt: seenAt + MESSAGE_RETENTION_MS }
+      })
+      return conversationChanged ? { ...item, unread: 0, messages } : item
+    }))
+  }, [activeId])
+
   const selectConversation = (id) => {
     setActiveId(id)
     setMobileChatOpen(true)
     setShowDetails(false)
     setShowChatMenu(false)
-    setConversations((items) => items.map((item) => item.id === id ? { ...item, unread: 0 } : item))
     if (view === 'settings') setView('messages')
   }
 
@@ -418,7 +436,6 @@ function App() {
       status: sendAt ? 'scheduled' : 'sent',
       ...(sendAt ? { scheduledAt: sendAt } : {}),
       ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-      ...(Number(disappearingHours) > 0 ? { expiresAt: Date.now() + Number(disappearingHours) * 3600000 } : {}),
     }
     setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: sendAt ? 'Scheduled message' : text, time: 'Now' } : item))
     setMessageText(''); setReplyTarget(null); setScheduleAt(''); messageInputRef.current?.focus()
@@ -820,7 +837,7 @@ function App() {
             <form className="composer-wrap" onSubmit={handleSend}>
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
-              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<label>Disappear <select value={disappearingHours} onChange={(event) => setDisappearingHours(event.target.value)}><option value="0">Off</option><option value="1">1 hour</option><option value="24">24 hours</option><option value="168">7 days</option></select></label><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
+              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
