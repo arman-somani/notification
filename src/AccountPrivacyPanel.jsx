@@ -14,8 +14,6 @@ export default function AccountPrivacyPanel() {
   const [discoverable, setDiscoverable] = useState(() => localStorage.getItem('notification-discoverable') !== 'false')
   const [blockedHandles, setBlockedHandles] = useState(() => readList('notification-blocked-handles'))
   const [blockedInput, setBlockedInput] = useState('')
-  const [storyText, setStoryText] = useState('')
-  const [stories, setStories] = useState(() => readList('notification-stories').filter((story) => story.expiresAt > Date.now()))
   const [notice, setNotice] = useState('')
   const [reportUsername, setReportUsername] = useState('')
   const [reportReason, setReportReason] = useState('spam')
@@ -31,32 +29,35 @@ export default function AccountPrivacyPanel() {
     localStorage.setItem('notification-group-invite-privacy', groupInvitePrivacy)
     localStorage.setItem('notification-discoverable', String(discoverable))
     localStorage.setItem('notification-blocked-handles', JSON.stringify(blockedHandles))
-    localStorage.setItem('notification-stories', JSON.stringify(stories))
     localStorage.setItem('notification-local-reports', JSON.stringify(reports))
-  }, [displayName, username, bio, messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, stories, reports])
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setStories((current) => current.filter((story) => story.expiresAt > Date.now()))
-    }, 60000)
-    return () => window.clearInterval(interval)
-  }, [])
+  }, [displayName, username, bio, messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, reports])
 
   const saveProfile = () => {
     const normalized = username.trim().toLowerCase().replace(/^@/, '')
+    const cleanDisplayName = displayName.trim()
+    if (!cleanDisplayName) {
+      setNotice('Please enter a display name.')
+      return
+    }
     if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
       setNotice('Username must be 3–20 characters using letters, numbers or underscores.')
       return
     }
+    const previousUsername = (localStorage.getItem('notification-username') || 'notification_user').toLowerCase()
     const reserved = readList('notification-username-registry').map((item) => String(item).toLowerCase())
-    if (reserved.includes(normalized) && normalized !== username.toLowerCase()) {
+    if (reserved.includes(normalized) && normalized !== previousUsername) {
       setNotice('That username is already used on this device. Choose another one.')
       return
     }
-    localStorage.setItem('notification-username-registry', JSON.stringify([...new Set([...reserved, normalized])]))
+    const nextRegistry = [...new Set([...reserved.filter((item) => item !== previousUsername), normalized])]
+    localStorage.setItem('notification-username-registry', JSON.stringify(nextRegistry))
+    localStorage.setItem('notification-display-name', cleanDisplayName)
+    localStorage.setItem('notification-username', normalized)
+    localStorage.setItem('notification-bio', bio.trim())
+    setDisplayName(cleanDisplayName)
     setUsername(normalized)
-    setDisplayName(displayName.trim() || 'Your workspace')
-    setNotice('Profile saved on this device. This device checks a local username list only; global uniqueness still requires Firebase.')
+    window.dispatchEvent(new CustomEvent('notification-profile-updated', { detail: { displayName: cleanDisplayName, username: normalized } }))
+    setNotice('Profile saved successfully on this device.')
   }
 
   const addBlockedHandle = () => {
@@ -83,14 +84,6 @@ export default function AccountPrivacyPanel() {
     setNotice('Report saved on this device. It has not been sent to a moderation team.')
   }
 
-  const shareStory = () => {
-    const value = storyText.trim()
-    if (!value) return
-    setStories((items) => [{ id: 'story-' + Date.now(), text: value, createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 }, ...items])
-    setStoryText('')
-    setNotice('Status added locally. It expires after 24 hours on this device.')
-  }
-
   return (
     <section className="settings-section account-privacy-panel">
       <div className="settings-section-title"><strong>Profile & privacy</strong><span>Manage your public details, discoverability and contact preferences</span></div>
@@ -111,10 +104,6 @@ export default function AccountPrivacyPanel() {
       <div className="account-subheading"><strong>Blocked usernames</strong><span>Blocked accounts cannot contact you once server enforcement is connected.</span></div>
       <div className="account-inline-input"><input value={blockedInput} onChange={(event) => setBlockedInput(event.target.value)} placeholder="Enter username to block" /><button className="secondary-button" onClick={addBlockedHandle}>Block</button></div>
       {blockedHandles.length > 0 ? <div className="blocked-handle-list">{blockedHandles.map((handle) => <span key={handle}>@{handle}<button onClick={() => setBlockedHandles((items) => items.filter((item) => item !== handle))} aria-label={'Unblock ' + handle}>×</button></span>)}</div> : <p className="account-muted">No blocked usernames saved.</p>}
-      <div className="account-divider" />
-      <div className="account-subheading"><strong>Stories & status</strong><span>Text status updates expire after 24 hours.</span></div>
-      <div className="account-inline-input"><input value={storyText} onChange={(event) => setStoryText(event.target.value)} maxLength={180} placeholder="Share a short status…" /><button className="secondary-button" onClick={shareStory} disabled={!storyText.trim()}>Share</button></div>
-      {stories.length > 0 && <div className="local-story-list">{stories.map((story) => <div key={story.id}><span>{story.text}</span><small>Expires {new Date(story.expiresAt).toLocaleString()}</small></div>)}</div>}
       <div className="account-divider" />
       <div className="account-subheading"><strong>Report an account</strong><span>Report impersonation, spam, harassment or other abuse.</span></div>
       <div className="account-report-form">
