@@ -614,7 +614,7 @@ function App({ profile, onLogout }) {
           text: data.text || '',
           replyToId: data.replyToId,
           replyToText: data.replyToText,
-          editedAt: data.editedAt?.toDate ? createdAt : data.editedAt,
+          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
           time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
           status: data.senderId === uid ? 'sent' : 'received',
         }
