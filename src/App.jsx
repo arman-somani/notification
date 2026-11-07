@@ -520,6 +520,7 @@ function App() {
     event?.preventDefault()
     const text = messageText.trim()
     if (!text || !activeConversation) return
+    if (activeConversation.blocked) { showToast('Unblock this user before sending messages.'); return }
     if (editingMessageId) {
       setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
@@ -760,6 +761,19 @@ function App() {
   const toggleFavorite = () => {
     setConversations((items) => items.map((item) => item.id === activeId ? { ...item, favorite: !item.favorite } : item))
     showToast(activeConversation.favorite ? 'Removed from starred' : 'Added to starred')
+  }
+
+  const toggleBlockContact = () => {
+    if (!activeConversation || activeConversation.status === 'group') return
+    const nextBlocked = !activeConversation.blocked
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, blocked: nextBlocked } : item))
+    const handle = String(activeConversation.username || activeConversation.id || '').replace(/^@/, '').toLowerCase()
+    try {
+      const saved = JSON.parse(localStorage.getItem('notification-blocked-users') || '[]')
+      const updated = nextBlocked ? [...new Set([...saved, handle])] : saved.filter((value) => value !== handle)
+      localStorage.setItem('notification-blocked-users', JSON.stringify(updated))
+    } catch { /* Keep the conversation-level block state available in this prototype. */ }
+    showToast(nextBlocked ? 'User blocked on this device' : 'User unblocked')
   }
 
   const archiveConversation = () => {
@@ -1197,15 +1211,29 @@ function App() {
       )}
 
       {showDetails && activeConversation && (
-        <aside className="details-panel">
-          <div className="details-header"><strong>Contact details</strong><button className="icon-button" onClick={() => setShowDetails(false)} aria-label="Close details"><Icon name="close" /></button></div>
+        <aside className="details-panel" aria-label="User information panel">
+          <div className="details-header"><div><span className="eyebrow">PROFILE</span><strong>Contact information</strong></div><button className="icon-button" onClick={() => setShowDetails(false)} aria-label="Close details"><Icon name="close" /></button></div>
           <div className="details-person">
             <Avatar person={activeConversation} size="profile" showStatus />
             <strong>{activeConversation.name}</strong>
-            <span>{activeConversation.status === 'online' ? 'Active now' : 'Notification member'}</span>
+            <span className="details-status">{activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? 'Group conversation' : 'Offline'}</span>
             <div className="details-actions">
               <button onClick={toggleFavorite}><Icon name="star" size={17} />{activeConversation.favorite ? 'Starred' : 'Star'}</button>
             </div>
+          </div>
+          <div className="details-block details-user-info">
+            <span className="section-label">USER INFORMATION</span>
+            <div><small>Display name</small><strong>{activeConversation.name}</strong></div>
+            <div><small>Username / profile ID</small><strong>@{activeConversation.username || activeConversation.id}</strong></div>
+            <div><small>Account type</small><strong>{activeConversation.status === 'group' ? 'Group' : 'Personal account'}</strong></div>
+            <div><small>Presence</small><strong>{activeConversation.status === 'online' ? 'Online now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group') : 'Last seen recently'}</strong></div>
+          </div>
+          {activeConversation.status !== 'group' && <div className="details-block details-block-action">
+            <button className={activeConversation.blocked ? 'details-block-button is-blocked' : 'details-block-button'} onClick={toggleBlockContact}>
+              <Icon name="shield" size={16} />{activeConversation.blocked ? 'Unblock user' : 'Block user'}
+            </button>
+            <small>{activeConversation.blocked ? 'This user is blocked on this device. Unblock to send messages.' : 'Blocking is stored locally in this prototype. Server-side enforcement requires Firebase.'}</small>
+          </div>}
           </div>
           {activeConversation.status === 'group' && <div className="details-block group-management-block"><span className="section-label">GROUP MEMBERS · {(activeConversation.memberIds || []).length}</span>
             {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, moderators: (item.moderators || []).includes(memberId) ? (item.moderators || []).filter((id) => id !== memberId) : [...(item.moderators || []), memberId] } : item))}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
