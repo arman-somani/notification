@@ -76,6 +76,7 @@ service cloud.firestore {
         allow create: if isConversationMember(conversationId)
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
+          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'attachmentPath', 'viewOnce', 'expiresAt',
