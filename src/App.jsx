@@ -1210,26 +1210,6 @@ function App() {
         ) : (
           <div className="main-empty"><Icon name="message" size={28} /><h2>Your conversations, all in one place.</h2><p>Choose a person to start chatting.</p><button className="primary-button" onClick={() => setShowNewChat(true)}><Icon name="plus" size={16} /> New conversation</button></div>
         )}
-      </main>
-
-      {viewOnceImage && (
-        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
-          const openedId = viewOnceImage.id
-          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
-          setViewOnceImage(null)
-        } }}>
-          <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
-            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
-              const openedId = viewOnceImage.id
-              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
-              setViewOnceImage(null)
-            }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
-            <img src={viewOnceImage.src} alt="Opened view-once image" />
-            <p>This image can only be opened once in Notification. Close it to finish viewing.</p>
-          </section>
-        </div>
-      )}
-
       {showDetails && activeConversation && (
         <aside className="details-panel" aria-label="User information panel">
           <div className="details-header"><div><span className="eyebrow">PROFILE</span><strong>Contact information</strong></div><button className="icon-button" onClick={() => setShowDetails(false)} aria-label="Close details"><Icon name="close" /></button></div>
@@ -1267,6 +1247,27 @@ function App() {
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
       )}
+      </main>
+
+      {viewOnceImage && (
+        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
+          const openedId = viewOnceImage.id
+          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+          setViewOnceImage(null)
+        } }}>
+          <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
+            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
+              const openedId = viewOnceImage.id
+              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+              setViewOnceImage(null)
+            }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
+            <img src={viewOnceImage.src} alt="Opened view-once image" />
+            <p>This image can only be opened once in Notification. Close it to finish viewing.</p>
+          </section>
+        </div>
+      )}
+
+
 
       {showAvatarPicker && (
         <div className="modal-backdrop avatar-picker-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAvatarPicker(false) }}>
