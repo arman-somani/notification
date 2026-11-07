@@ -284,6 +284,7 @@ function App() {
   const [recording, setRecording] = useState(false)
   const [recordingElapsed, setRecordingElapsed] = useState(0)
   const [recordingPreview, setRecordingPreview] = useState(null)
+  const [waveformLevels, setWaveformLevels] = useState(() => Array(24).fill(3))
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
   const [showGroupCreator, setShowGroupCreator] = useState(false)
@@ -306,6 +307,9 @@ function App() {
   const recordingChunksRef = useRef([])
   const recordingStartedAtRef = useRef(0)
   const recordingCancelledRef = useRef(false)
+  const audioContextRef = useRef(null)
+  const analyserRef = useRef(null)
+  const waveformFrameRef = useRef(null)
   const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
@@ -491,6 +495,55 @@ function App() {
     reader.readAsDataURL(file)
   }
 
+  const stopVoiceWaveform = () => {
+    if (waveformFrameRef.current !== null) window.cancelAnimationFrame(waveformFrameRef.current)
+    waveformFrameRef.current = null
+    analyserRef.current = null
+    const audioContext = audioContextRef.current
+    audioContextRef.current = null
+    if (audioContext && audioContext.state !== 'closed') audioContext.close().catch(() => {})
+    setWaveformLevels(Array(24).fill(3))
+  }
+
+  const startVoiceWaveform = (stream) => {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextConstructor) return
+
+    try {
+      const audioContext = new AudioContextConstructor()
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.78
+      const source = audioContext.createMediaStreamSource(stream)
+      source.connect(analyser)
+      audioContextRef.current = audioContext
+      analyserRef.current = analyser
+      if (audioContext.state === 'suspended') audioContext.resume().catch(() => {})
+
+      const frequencyData = new Uint8Array(analyser.frequencyBinCount)
+      let lastPaint = 0
+      const drawWaveform = (timestamp) => {
+        if (audioContextRef.current !== audioContext || mediaRecorderRef.current?.state !== 'recording') return
+        waveformFrameRef.current = window.requestAnimationFrame(drawWaveform)
+        if (timestamp - lastPaint < 45) return
+        lastPaint = timestamp
+        analyser.getByteFrequencyData(frequencyData)
+        const nextLevels = Array.from({ length: 24 }, (_, index) => {
+          const start = Math.floor(index * frequencyData.length / 24)
+          const end = Math.max(start + 1, Math.floor((index + 1) * frequencyData.length / 24))
+          let peak = 0
+          for (let bin = start; bin < end; bin += 1) peak = Math.max(peak, frequencyData[bin])
+          return Math.round(3 + Math.sqrt(peak / 255) * 24)
+        })
+        setWaveformLevels(nextLevels)
+      }
+      waveformFrameRef.current = window.requestAnimationFrame(drawWaveform)
+    } catch {
+      // Recording still works in browsers where live audio analysis is unavailable.
+      stopVoiceWaveform()
+    }
+  }
+
   const startVoiceRecording = async () => {
     if (recordingHoldRef.current || recording || recordingPreview) return
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { showToast('Voice recording is not supported in this browser'); return }
@@ -513,6 +566,7 @@ function App() {
         const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000))
         stream.getTracks().forEach((track) => track.stop())
         recordingStreamRef.current = null
+        stopVoiceWaveform()
 
         if (!recordingCancelledRef.current && chunks.length) {
           const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
@@ -534,8 +588,13 @@ function App() {
       recorder.start(150)
       setRecording(true)
       setRecordingElapsed(0)
+      setWaveformLevels(Array(24).fill(3))
+      startVoiceWaveform(stream)
     } catch {
       recordingHoldRef.current = false
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+      recordingStreamRef.current = null
+      stopVoiceWaveform()
       setRecording(false)
       showToast('Microphone permission was not granted')
     }
@@ -977,14 +1036,6 @@ function App() {
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
-              {recording && (
-                <div className="voice-recording-status" role="status" aria-live="polite">
-                  <span className="voice-recording-live"><i /> REC</span>
-                  <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></span>
-                  <strong>{Math.floor(recordingElapsed / 60)}:{String(recordingElapsed % 60).padStart(2, '0')}</strong>
-                  <small>Release to finish</small>
-                </div>
-              )}
               {recordingPreview && (
                 <div className="voice-preview-panel">
                   <div className="voice-preview-heading"><strong>Voice message preview</strong><span>Listen before sending · {Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span></div>
@@ -998,8 +1049,21 @@ function App() {
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
-                <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
-                <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
+                {recording ? (
+                  <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
+                    <span className="composer-recording-badge"><i /> REC</span>
+                    <span className="voice-waveform" aria-hidden="true">
+                      {waveformLevels.map((level, index) => <i key={index} style={{ height: level + 'px' }} />)}
+                    </span>
+                    <strong>{Math.floor(recordingElapsed / 60)}:{String(recordingElapsed % 60).padStart(2, '0')}</strong>
+                    <small>Release to finish</small>
+                  </div>
+                ) : (
+                  <>
+                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                    <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
+                  </>
+                )}
                 <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>
                 <span className="voice-record-control">
                   <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
