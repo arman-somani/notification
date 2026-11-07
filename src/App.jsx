@@ -137,6 +137,25 @@ const initialConversations = [
 
 const MESSAGE_RETENTION_MS = 86400000
 
+const reactionOptions = [
+  { emoji: '👍', label: 'Like' },
+  { emoji: '❤️', label: 'Love' },
+  { emoji: '😂', label: 'Laugh' },
+  { emoji: '😮', label: 'Wow' },
+  { emoji: '😢', label: 'Sad' },
+  { emoji: '🙏', label: 'Thanks' },
+  { emoji: '🔥', label: 'Fire' },
+  { emoji: '🎉', label: 'Celebrate' },
+  { emoji: '👏', label: 'Clap' },
+  { emoji: '😍', label: 'Heart eyes' },
+  { emoji: '🤔', label: 'Thinking' },
+  { emoji: '🙌', label: 'Praise' },
+  { emoji: '💯', label: '100' },
+  { emoji: '👎', label: 'Dislike' },
+  { emoji: '😡', label: 'Angry' },
+  { emoji: '🤝', label: 'Handshake' },
+]
+
 const directoryPeople = [
   { id: 'nina', avatarId: 'female-04', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
   { id: 'daniel', avatarId: 'male-02', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
@@ -254,6 +273,7 @@ function App() {
   const [listFilter, setListFilter] = useState('all')
   const [messageText, setMessageText] = useState(() => localStorage.getItem('notification-draft-alex') || '')
   const [selectedMessageId, setSelectedMessageId] = useState(null)
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null)
   const [replyTarget, setReplyTarget] = useState(null)
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [forwardMessageId, setForwardMessageId] = useState(null)
@@ -566,9 +586,17 @@ function App() {
     setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.filter((message) => message.id !== messageId) } : item))
     setSelectedMessageId(null); showToast('Message removed from this browser preview')
   }
-  const toggleMessageReaction = (messageId) => {
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === messageId ? { ...message, reactions: message.reactions?.includes('👍') ? message.reactions.filter((reaction) => reaction !== '👍') : [...(message.reactions || []), '👍'] } : message) } : item))
+  const toggleMessageReaction = (messageId, emoji) => {
+    setConversations((items) => items.map((item) => item.id === activeId ? {
+      ...item,
+      messages: item.messages.map((message) => {
+        if (message.id !== messageId) return message
+        const reactions = message.reactions || []
+        return { ...message, reactions: reactions.includes(emoji) ? reactions.filter((reaction) => reaction !== emoji) : [...reactions, emoji] }
+      }),
+    } : item))
     setSelectedMessageId(null)
+    setReactionPickerMessageId(null)
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
@@ -912,7 +940,15 @@ function App() {
                       <span className="message-meta">{message.status === 'scheduled' ? 'Scheduled · ' : ''}{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
                       <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                       {selectedMessageId === message.id && <div className="message-action-row">
-                        <button type="button" onClick={() => beginReply(message)}>Reply</button><button type="button" onClick={() => toggleMessageReaction(message.id)}>👍 React</button>
+                        <button type="button" onClick={() => beginReply(message)}>Reply</button>
+                        <button type="button" onClick={() => setReactionPickerMessageId((current) => current === message.id ? null : message.id)}>😊 React</button>
+                        {reactionPickerMessageId === message.id && (
+                          <div className="message-reaction-picker" aria-label="Choose a reaction">
+                            {reactionOptions.map(({ emoji, label }) => (
+                              <button key={emoji} type="button" title={label} aria-label={`React with ${label}`} onClick={() => toggleMessageReaction(message.id, emoji)}>{emoji}</button>
+                            ))}
+                          </div>
+                        )}
                         {message.from === 'me' && message.type === 'text' && message.status !== 'scheduled' && <button type="button" onClick={() => beginEdit(message)}>Edit</button>}
                         <button type="button" onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, pinned: !entry.pinned } : entry) } : item))}>{message.pinned ? 'Unpin' : 'Pin'}</button>
                         <button type="button" onClick={() => setForwardMessageId((current) => current === message.id ? null : message.id)}>Forward</button>
