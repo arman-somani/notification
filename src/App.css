@@ -142,9 +142,9 @@
 .new-chat-button:hover { background: #444; color: #fff; border-color: transparent; }
 .subtle-button { background: var(--surface-soft); border-color: var(--line); }
 
-.inbox-heading { padding: 25px 22px 17px; display: flex; align-items: flex-end; justify-content: space-between; }
+.inbox-heading { padding: 16px 22px 10px; display: flex; align-items: flex-end; justify-content: space-between; }
 .eyebrow { color: var(--text-faint); font-size: 9px; font-weight: 750; letter-spacing: 1.6px; line-height: 1.2; }
-.inbox-heading h1 { margin: 8px 0 3px; color: var(--text); font-size: 26px; font-weight: 720; letter-spacing: -1.1px; line-height: 1.1; }
+.inbox-heading h1 { margin: 5px 0 2px; color: var(--text); font-size: 22px; font-weight: 720; letter-spacing: -1.1px; line-height: 1.1; }
 .inbox-heading p { margin: 0; color: var(--text-soft); font-size: 11px; }
 .title-count { display: inline-grid; place-items: center; vertical-align: 4px; margin-left: 8px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 6px; color: var(--text-soft); background: var(--surface-muted); font-size: 10px; font-weight: 650; letter-spacing: 0; }
 .search-box { height: 42px; margin: 0 20px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; display: flex; align-items: center; gap: 9px; color: var(--text-faint); background: var(--surface-soft); transition: border-color .18s ease, background .18s ease; }
@@ -152,23 +152,23 @@
 .search-box input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 11px; }
 .search-box input::placeholder { color: var(--text-faint); }
 .search-box kbd { width: 18px; height: 19px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text-faint); font: 10px var(--font-sans); background: var(--surface); }
-.filter-row { display: flex; gap: 7px; padding: 13px 20px 2px; }
-.filter-chip { display: flex; gap: 7px; align-items: center; padding: 6px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-soft); font: inherit; font-size: 10px; cursor: pointer; }
+.filter-row { display: flex; gap: 6px; padding: 8px 20px 0; }
+.filter-chip { display: flex; gap: 6px; align-items: center; padding: 5px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-soft); font: inherit; font-size: 10px; cursor: pointer; }
 .filter-chip span { color: var(--text-faint); font-size: 9px; }
 .filter-chip:hover { color: var(--text); background: var(--surface-soft); }
 .filter-chip.selected { background: var(--surface-muted); border-color: var(--line); color: var(--text); font-weight: 650; }
 
-.online-section { padding: 19px 21px 17px; border-bottom: 1px solid var(--line); }
+.online-section { padding: 12px 21px 10px; border-bottom: 1px solid var(--line); }
 .section-label { display: flex; align-items: center; gap: 7px; color: var(--text-faint); font-size: 9px; font-weight: 750; letter-spacing: 1.3px; }
 .online-count { color: var(--text-soft); font-size: 9px; letter-spacing: .3px; }
-.online-people { display: flex; align-items: flex-start; gap: 14px; padding-top: 13px; }
-.online-person { border: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; background: transparent; color: var(--text-soft); font: inherit; font-size: 9px; cursor: pointer; min-width: 37px; }
+.online-people { display: flex; align-items: flex-start; gap: 11px; padding-top: 8px; }
+.online-person { border: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; background: transparent; color: var(--text-soft); font: inherit; font-size: 8px; cursor: pointer; min-width: 37px; }
 .online-person:hover { color: var(--text); }
-.online-more { width: 34px; height: 34px; border: 1px dashed var(--line-strong); border-radius: 50%; margin-top: 1px; color: var(--text-soft); background: transparent; font-size: 10px; cursor: pointer; }
+.online-more { width: 29px; height: 29px; border: 1px dashed var(--line-strong); border-radius: 50%; margin-top: 1px; color: var(--text-soft); background: transparent; font-size: 10px; cursor: pointer; }
 
 .avatar { position: relative; display: inline-grid; place-items: center; flex: 0 0 auto; overflow: visible; border-radius: 50%; color: #333; background: #dededb; font-weight: 700; letter-spacing: -.3px; }
 .avatar > span:first-child { width: 100%; height: 100%; display: grid; place-items: center; border-radius: inherit; overflow: hidden; }
-.avatar-online { width: 34px; height: 34px; font-size: 9px; }
+.avatar-online { width: 29px; height: 29px; font-size: 8px; }
 .avatar-message { width: 27px; height: 27px; font-size: 8px; margin-top: 2px; }
 .avatar-md { width: 34px; height: 34px; font-size: 9px; }
 .avatar-lg { width: 42px; height: 42px; font-size: 11px; }
