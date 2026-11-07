@@ -260,7 +260,7 @@ function App() {
   const [messageSearchOpen, setMessageSearchOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
   const [scheduleAt, setScheduleAt] = useState('')
-  const [viewOnceMode, setViewOnceMode] = useState(false)
+  const [viewOnceImage, setViewOnceImage] = useState(null)
   const [recording, setRecording] = useState(false)
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
@@ -449,9 +449,8 @@ function App() {
     if (file.size > 3 * 1024 * 1024) { showToast('Choose an image smaller than 3 MB'); return }
     const reader = new FileReader()
     reader.onload = () => {
-      const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: viewOnceMode, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: viewOnceMode ? 'View-once image' : 'Image', time: 'Now' } : item))
-      setViewOnceMode(false)
+      const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: true, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'View-once image', time: 'Now' } : item))
     }
     reader.onerror = () => showToast('Could not read that image')
     reader.readAsDataURL(file)
@@ -791,9 +790,27 @@ function App() {
                       {message.type === 'poll' ? (
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
-                        <button type="button" className={'image-message' + (message.viewOnce ? ' image-view-once' : '')} onClick={() => { if (message.viewOnce && !message.viewed) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, imageData: null } : entry) } : item)) }}>
-                          {message.viewOnce && message.viewed ? <span>Opened · image unavailable</span> : message.imageData ? <><img src={message.imageData} alt="Shared image" />{message.viewOnce && <small>View once · open to consume</small>}</> : <span>Image preview is only available in this browser session</span>}
-                        </button>
+                        message.from === 'me' ? (
+                          <div className="image-message image-sent-preview">
+                            {message.imageData ? <img src={message.imageData} alt="Image you sent" /> : <span>Image sent</span>}
+                            <small><Icon name="shield" size={11} /> Sent · recipient can open once</small>
+                          </div>
+                        ) : message.viewed ? (
+                          <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>Opened · image unavailable</span></div>
+                        ) : (
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
+                            if (!message.imageData || message.viewed) return
+                            setViewOnceImage({ id: message.id, src: message.imageData })
+                            setConversations((items) => items.map((item) => item.id === activeId ? {
+                              ...item,
+                              messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, openedAt: Date.now() } : entry),
+                            } : item))
+                          }}>
+                            <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
+                            <strong>{message.imageData ? 'Image waiting for you' : 'Image unavailable in this preview'}</strong>
+                            <small>{message.imageData ? 'Open once · it cannot be reopened after closing' : 'Image bytes are not stored in this browser preview'}</small>
+                          </button>
+                        )
                       ) : message.type === 'audio' ? (
                         message.mediaUrl ? <audio className="voice-message-player" controls src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
@@ -837,7 +854,7 @@ function App() {
             <form className="composer-wrap" onSubmit={handleSend}>
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
-              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label><button type="button" className={viewOnceMode ? 'view-once-toggle enabled' : 'view-once-toggle'} onClick={() => setViewOnceMode((value) => !value)} aria-pressed={viewOnceMode}>View once image {viewOnceMode ? 'on' : 'off'}</button></div>
+              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span><label>Schedule <input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label></div>
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
@@ -854,6 +871,24 @@ function App() {
           <div className="main-empty"><Icon name="message" size={28} /><h2>Your conversations, all in one place.</h2><p>Choose a person to start chatting.</p><button className="primary-button" onClick={() => setShowNewChat(true)}><Icon name="plus" size={16} /> New conversation</button></div>
         )}
       </main>
+
+      {viewOnceImage && (
+        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
+          const openedId = viewOnceImage.id
+          setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+          setViewOnceImage(null)
+        } }}>
+          <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
+            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
+              const openedId = viewOnceImage.id
+              setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+              setViewOnceImage(null)
+            }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
+            <img src={viewOnceImage.src} alt="Opened view-once image" />
+            <p>This image can only be opened once in Notification. Close it to finish viewing.</p>
+          </section>
+        </div>
+      )}
 
       {showDetails && activeConversation && (
         <aside className="details-panel">
