@@ -10,12 +10,10 @@ service firebase.storage {
         && firestore.exists(/databases/(default)/documents/conversations/$(conversationId)/members/$(request.auth.uid));
     }
 
+    // Images are all view-once. Direct client reads are prohibited.
+    // A trusted upload/open function must authorize access and consume views.
     match /conversations/{conversationId}/images/{messageId}/{fileName} {
-      allow read: if isConversationMember(conversationId);
-      allow create: if isConversationMember(conversationId)
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
-      allow update, delete: if false;
+      allow read, write: if false;
     }
 
     match /conversations/{conversationId}/voice/{messageId}/{fileName} {
