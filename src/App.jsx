@@ -383,8 +383,8 @@ function App() {
   const [toast, setToast] = useState('')
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof Notification !== 'undefined' && Notification.permission === 'granted')
-  const [soundEnabled, setSoundEnabled] = useState(false)
-  const [compactMode, setCompactMode] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('notification-sound-enabled') === 'true')
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('notification-compact-mode') === 'true')
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const mediaRecorderRef = useRef(null)
   const recordingHoldRef = useRef(false)
@@ -395,6 +395,7 @@ function App() {
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const waveformFrameRef = useRef(null)
+  const [profileName, setProfileName] = useState(() => localStorage.getItem('notification-display-name') || 'Your workspace')
   const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
@@ -415,6 +416,23 @@ function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('notification-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    const syncProfile = (event) => {
+      const nextName = event.detail?.displayName
+      if (typeof nextName === 'string' && nextName.trim()) setProfileName(nextName.trim())
+    }
+    window.addEventListener('notification-profile-updated', syncProfile)
+    return () => window.removeEventListener('notification-profile-updated', syncProfile)
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('notification-sound-enabled', String(soundEnabled))
+  }, [soundEnabled])
+
+  useEffect(() => {
+    localStorage.setItem('notification-compact-mode', String(compactMode))
+  }, [compactMode])
 
   // Browser preview persistence only; binary media is deliberately session-only.
   useEffect(() => {
@@ -852,11 +870,11 @@ function App() {
           <button className={view === 'settings' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('settings'); setMobileChatOpen(false) }} aria-label="Settings" title="Settings"><Icon name="settings" /></button>
           <div className="rail-divider" />
           <button className="rail-profile" onClick={() => setProfileMenuOpen((open) => !open)} aria-label="Open profile menu">
-            <Avatar person={{ avatarId: profileAvatar, initials: 'Y', status: 'online' }} size="rail" showStatus />
+            <Avatar person={{ avatarId: profileAvatar, initials: profileName.split(' ').map((part) => part[0]).join('').slice(0, 2) || 'Y', status: 'online' }} size="rail" showStatus />
           </button>
           {profileMenuOpen && (
             <div className="profile-popover">
-              <strong>Your profile</strong>
+              <strong>{profileName}</strong>
               <span>Available</span>
               <span className="profile-avatar-lock"><Icon name="shield" size={13} /> Preset profile avatar</span>
               <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>
@@ -939,7 +957,7 @@ function App() {
         <div className="inbox-footer">
           <button className="footer-profile" onClick={() => { setView("settings"); setMobileChatOpen(false) }} aria-label="Open profile settings">
             <Avatar person={{ avatarId: profileAvatar, initials: 'Y' }} size="footer" />
-            <span><strong>Your workspace</strong><small>Choose your avatar</small></span>
+            <span><strong>{profileName}</strong><small>Account profile</small></span>
           </button>
           <button className="icon-button subtle-button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label="Toggle color theme" title="Toggle theme"><Icon name={theme === 'light' ? 'moon' : 'sun'} size={17} /></button>
         </div>
