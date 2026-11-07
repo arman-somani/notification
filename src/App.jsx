@@ -4,6 +4,7 @@ import './App.css'
 const initialConversations = [
   {
     id: 'alex',
+    avatarId: 'male-03',
     name: 'Alex Morgan',
     initials: 'AM',
     tone: 2,
@@ -25,6 +26,7 @@ const initialConversations = [
   },
   {
     id: 'olivia',
+    avatarId: 'female-02',
     name: 'Olivia Rhye',
     initials: 'OR',
     tone: 4,
@@ -43,6 +45,7 @@ const initialConversations = [
   },
   {
     id: 'noah',
+    avatarId: 'male-01',
     name: 'Noah Williams',
     initials: 'NW',
     tone: 1,
@@ -60,6 +63,7 @@ const initialConversations = [
   },
   {
     id: 'emma',
+    avatarId: 'female-01',
     name: 'Emma Thompson',
     initials: 'ET',
     tone: 3,
@@ -95,6 +99,7 @@ const initialConversations = [
   },
   {
     id: 'james',
+    avatarId: 'male-05',
     name: 'James Miller',
     initials: 'JM',
     tone: 6,
@@ -111,6 +116,7 @@ const initialConversations = [
   },
   {
     id: 'sophia',
+    avatarId: 'female-03',
     name: 'Sophia Bennett',
     initials: 'SB',
     tone: 2,
@@ -128,11 +134,46 @@ const initialConversations = [
 ]
 
 const directoryPeople = [
-  { id: 'nina', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
-  { id: 'daniel', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
-  { id: 'maya', name: 'Maya Chen', initials: 'MC', tone: 4, status: 'online' },
-  { id: 'ethan', name: 'Ethan Brooks', initials: 'EB', tone: 5, status: 'offline' },
+  { id: 'nina', avatarId: 'female-04', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
+  { id: 'daniel', avatarId: 'male-02', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
+  { id: 'maya', avatarId: 'female-05', name: 'Maya Chen', initials: 'MC', tone: 4, status: 'online' },
+  { id: 'ethan', avatarId: 'male-04', name: 'Ethan Brooks', initials: 'EB', tone: 5, status: 'offline' },
 ]
+
+const avatarOptions = [
+  { id: 'male-01', gender: 'male', label: 'Classic', skin: '#d3d3d0', hair: '#292929', shirt: '#666663', back: 'M14 31C12 13 21 5 32 5s20 8 18 26l-5 8H19Z', front: 'M15 25C16 11 23 7 32 7c10 0 17 8 17 19-5-2-9-6-11-11-6 6-13 9-23 10Z' },
+  { id: 'male-02', gender: 'male', label: 'Curly', skin: '#bdbdb9', hair: '#444440', shirt: '#555552', back: 'M13 30C7 20 15 9 22 10c2-8 12-9 16-4 8-3 16 5 13 13 7 5 3 15-2 19H17Z', front: 'M13 25c-2-8 4-12 8-13 2-7 9-7 12-3 6-5 14 1 14 7 4 3 4 8 2 12-6-3-9-7-11-11-7 7-15 10-25 8Z' },
+  { id: 'male-03', gender: 'male', label: 'Side part', skin: '#dededb', hair: '#343432', shirt: '#777773', back: 'M15 30C12 13 21 6 33 6c12 0 19 9 16 25l-5 8H19Z', front: 'M15 25C15 12 23 7 34 7c8 0 14 5 15 15-6-3-10-7-12-11-4 5-11 8-22 9Z' },
+  { id: 'male-04', gender: 'male', label: 'Buzz cut', skin: '#c9c9c5', hair: '#555550', shirt: '#454542', back: 'M17 27C17 14 23 9 32 9s15 5 15 18l-4 7H21Z', front: 'M17 23C18 13 24 9 32 9s14 5 15 14c-7-3-22-3-30 0Z' },
+  { id: 'male-05', gender: 'male', label: 'Wavy', skin: '#e0e0dc', hair: '#3b3b38', shirt: '#888884', back: 'M14 31C10 16 19 5 32 5s22 10 18 27l-5 9H19Z', front: 'M14 25c-1-8 4-13 9-14 2-6 10-7 13-3 7-3 14 3 13 11-5-1-8-5-11-8-6 7-14 11-24 14Z' },
+  { id: 'female-01', gender: 'female', label: 'Soft bob', skin: '#d7d7d3', hair: '#343431', shirt: '#666662', back: 'M13 31C10 12 19 4 32 4s22 10 19 29l-1 21c-5 5-9 0-10-8H24c-1 8-5 13-10 8Z', front: 'M14 25C14 10 22 5 32 5s18 7 18 21c-6-4-10-8-13-13-5 6-12 10-23 12Z' },
+  { id: 'female-02', gender: 'female', label: 'Long hair', skin: '#c2c2be', hair: '#4a4a46', shirt: '#777773', back: 'M12 32C9 12 20 3 32 3s23 9 20 30l-2 27h-9l-2-17H25l-2 17h-9Z', front: 'M14 25C14 10 22 5 32 5s18 7 18 21c-5-3-9-8-12-13-6 7-14 11-24 12Z' },
+  { id: 'female-03', gender: 'female', label: 'Curly', skin: '#e0e0dd', hair: '#292927', shirt: '#555552', back: 'M13 32C5 22 12 9 20 10c2-8 11-10 15-5 8-5 17 3 16 11 7 7 2 18-3 22l-2 18h-8l-1-12H26l-2 12h-9l-1-18Z', front: 'M13 26c-3-9 3-15 8-15 2-7 10-7 13-3 7-4 14 2 13 9l-2 11c-3-8-7-11-11-14-5 7-12 11-21 12Z' },
+  { id: 'female-04', gender: 'female', label: 'Ponytail', skin: '#c9c9c5', hair: '#555550', shirt: '#70706c', back: 'M16 30C12 12 21 5 32 5s19 8 17 25l-2 19c-2 5-8 2-8-5H25c-1 8-7 10-9 4Z', front: 'M15 25C15 11 23 6 33 6c10 0 16 8 16 19-6-3-10-7-13-12-5 6-12 10-21 12Z', pony: 'M44 24c10 0 13 8 11 17-1 6-5 10-10 12l-3-4c5-7 5-15 2-25Z' },
+  { id: 'female-05', gender: 'female', label: 'Pixie', skin: '#bcbcb8', hair: '#3c3c39', shirt: '#858580', back: 'M16 29C14 13 21 6 32 6s18 8 16 24l-4 8H20Z', front: 'M15 26C14 12 22 6 33 6c9 0 16 6 16 18-6-2-9-6-12-10-4 7-12 11-22 12Z' },
+]
+
+function AvatarArtwork({ avatarId }) {
+  const avatar = avatarOptions.find((option) => option.id === avatarId)
+  if (!avatar) return null
+
+  return (
+    <svg className="avatar-art" viewBox="0 0 64 64" role="img" aria-label={avatar.gender + ' ' + avatar.label + ' avatar'>
+      <circle cx="32" cy="32" r="32" fill="#e9e9e6" />
+      {avatar.pony && <path d={avatar.pony} fill={avatar.hair} />}
+      <path d={avatar.back} fill={avatar.hair} />
+      <path d="M5 66c1-12 8-18 19-20h16c11 2 18 8 19 20Z" fill={avatar.shirt} />
+      <path d="M26 39h12v12H26Z" fill={avatar.skin} />
+      <ellipse cx="18.5" cy="30" rx="2.8" ry="4.2" fill={avatar.skin} />
+      <ellipse cx="45.5" cy="30" rx="2.8" ry="4.2" fill={avatar.skin} />
+      <ellipse cx="32" cy="29" rx="13.2" ry="16.2" fill={avatar.skin} />
+      <path d={avatar.front} fill={avatar.hair} />
+      <path d="M24 30h.1m15.8 0h.1" stroke="#383836" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M29 37c1.8 1.4 4.2 1.4 6 0" stroke="#656560" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      <path d="M32 31.5v2.5" stroke="#999994" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 const iconPaths = {
   message: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.5A7.5 7.5 0 1 1 20 11.5Z" /><path d="M7.5 10h.01M12 10h.01M16.5 10h.01" /></>,
@@ -180,10 +221,21 @@ function Icon({ name, size = 18, strokeWidth = 1.8, className = '' }) {
 
 function Avatar({ person, size = 'md', showStatus = false }) {
   return (
-    <span className={'avatar avatar-' + size + ' avatar-tone-' + (person.tone || 1)}>
-      <span>{person.initials || person.name?.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>
+    <span className={'avatar avatar-' + size + (person.avatarId ? ' avatar-illustrated' : ' avatar-tone-' + (person.tone || 1))}>
+      {person.avatarId
+        ? <AvatarArtwork avatarId={person.avatarId} />
+        : <span>{person.initials || person.name?.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>}
       {showStatus && person.status === 'online' && <i className="presence-dot" />}
     </span>
+  )
+}
+
+function BrandGlyph({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 5.5h10.8A3.2 3.2 0 0 1 19 8.7v5.1a3.2 3.2 0 0 1-3.2 3.2H11l-4.5 3v-3.1h-1A3.5 3.5 0 0 1 2 13.4V9a3.5 3.5 0 0 1 3-3.5Z" />
+      <path d="M8 9.5h7m-7 3h4.5" />
+    </svg>
   )
 }
 
@@ -205,6 +257,10 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [compactMode, setCompactMode] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
+  const [avatarPickerGender, setAvatarPickerGender] = useState(() => (localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male')
   const messageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -215,24 +271,66 @@ function App() {
   }, [theme])
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  const directory = useMemo(() => [
+    ...conversations.filter((item) => !item.archived && item.status !== 'group'),
+    ...directoryPeople.filter((person) => !conversations.some((item) => item.id === person.id)),
+  ], [conversations])
 
   const visibleConversations = useMemo(() => {
     let items = conversations
     if (view === 'starred') items = items.filter((item) => item.favorite && !item.archived)
     else if (view === 'archive') items = items.filter((item) => item.archived)
+    else if (view === 'contacts') items = directory
     else items = items.filter((item) => !item.archived)
 
     if (listFilter === 'unread') items = items.filter((item) => item.unread > 0)
     const query = search.trim().toLowerCase()
     if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || item.preview.toLowerCase().includes(query))
     return [...items].sort((a, b) => Number(b.pinned) - Number(a.pinned))
-  }, [conversations, listFilter, search, view])
+  }, [conversations, directory, listFilter, search, view])
 
   const showToast = (message) => {
     setToast(message)
     window.clearTimeout(showToast.timeout)
     showToast.timeout = window.setTimeout(() => setToast(''), 2600)
   }
+
+  const openAvatarPicker = () => {
+    const currentAvatar = avatarOptions.find((option) => option.id === profileAvatar) || avatarOptions[0]
+    setDraftAvatar(currentAvatar.id)
+    setAvatarPickerGender(currentAvatar.gender)
+    setProfileMenuOpen(false)
+    setShowAvatarPicker(true)
+  }
+
+  const saveAvatarSelection = () => {
+    setProfileAvatar(draftAvatar)
+    localStorage.setItem('notification-profile-avatar', draftAvatar)
+    setShowAvatarPicker(false)
+    showToast('Your avatar has been updated')
+  }
+
+  useEffect(() => {
+    const handleGlobalKeys = (event) => {
+      if (event.key === 'Escape') {
+        setShowAvatarPicker(false)
+        setShowNewChat(false)
+        setShowChatMenu(false)
+        setShowDetails(false)
+        setProfileMenuOpen(false)
+      }
+      const target = event.target
+      const isTyping = target instanceof HTMLElement && (
+        target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+      )
+      if (event.key === '/' && !isTyping && !showAvatarPicker && !showNewChat) {
+        event.preventDefault()
+        document.querySelector('.inbox-panel:not(.hidden-mobile) .search-box input')?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeys)
+    return () => window.removeEventListener('keydown', handleGlobalKeys)
+  }, [showAvatarPicker, showNewChat])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -317,7 +415,6 @@ function App() {
     setNewChatSearch('')
   }
 
-  const directory = [...conversations.filter((item) => !item.archived), ...directoryPeople.filter((person) => !conversations.some((item) => item.id === person.id))]
   const filteredDirectory = directory.filter((person) => person.name.toLowerCase().includes(newChatSearch.toLowerCase()))
 
   const sidebarTitle = view === 'starred' ? 'Starred' : view === 'archive' ? 'Archive' : view === 'contacts' ? 'Contacts' : 'Messages'
@@ -327,7 +424,7 @@ function App() {
     <div className={'app-shell' + (mobileChatOpen ? ' mobile-chat-open' : '') + (compactMode ? ' compact-mode' : '')}>
       <aside className="nav-rail">
         <button className="brand-mark" aria-label="Notification home" onClick={() => { setView('messages'); setMobileChatOpen(false) }}>
-          <span className="brand-mark-shape"><Icon name="message" size={21} strokeWidth={2.2} /></span>
+          <span className="brand-mark-shape"><BrandGlyph size={22} /></span>
         </button>
         <div className="rail-divider" />
         <nav className="rail-nav" aria-label="Main navigation">
@@ -343,13 +440,13 @@ function App() {
           <button className={view === 'settings' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('settings'); setMobileChatOpen(false) }} aria-label="Settings" title="Settings"><Icon name="settings" /></button>
           <div className="rail-divider" />
           <button className="rail-profile" onClick={() => setProfileMenuOpen((open) => !open)} aria-label="Open profile menu">
-            <span className="profile-avatar">Y</span>
-            <i className="presence-dot" />
+            <Avatar person={{ avatarId: profileAvatar, initials: 'Y', status: 'online' }} size="rail" showStatus />
           </button>
           {profileMenuOpen && (
             <div className="profile-popover">
               <strong>Your profile</strong>
               <span>Available</span>
+              <button onClick={openAvatarPicker}><Icon name="image" size={15} /> Choose avatar</button>
               <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>
             </div>
           )}
@@ -359,7 +456,7 @@ function App() {
       <aside className={'inbox-panel' + (mobileChatOpen ? ' hidden-mobile' : '')}>
         <div className="inbox-topbar">
           <div className="wordmark">
-            <span className="wordmark-icon"><Icon name="message" size={16} strokeWidth={2.2} /></span>
+            <span className="wordmark-icon"><BrandGlyph size={19} /></span>
             <span>notification<span className="wordmark-period">.</span></span>
           </div>
           <button className="icon-button new-chat-button" onClick={() => setShowNewChat(true)} aria-label="Start a new chat" title="New chat"><Icon name="plus" size={19} /></button>
@@ -414,7 +511,7 @@ function App() {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <button key={conversation.id} className={'conversation-item' + (activeId === conversation.id ? ' active' : '')} onClick={() => selectConversation(conversation.id)}>
+              <button key={conversation.id} className={'conversation-item' + (activeId === conversation.id ? ' active' : '')} onClick={() => view === 'contacts' ? startConversation(conversation) : selectConversation(conversation.id)}>
                 <Avatar person={conversation} size="lg" showStatus />
                 <span className="conversation-copy">
                   <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
@@ -426,10 +523,10 @@ function App() {
         </div>
 
         <div className="inbox-footer">
-          <div className="footer-profile">
-            <span className="profile-avatar footer-avatar">Y</span>
-            <span><strong>Your workspace</strong><small>Personal account</small></span>
-          </div>
+          <button className="footer-profile" onClick={openAvatarPicker} aria-label="Choose your profile avatar">
+            <Avatar person={{ avatarId: profileAvatar, initials: 'Y' }} size="footer" />
+            <span><strong>Your workspace</strong><small>Choose your avatar</small></span>
+          </button>
           <button className="icon-button subtle-button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label="Toggle color theme" title="Toggle theme"><Icon name={theme === 'light' ? 'moon' : 'sun'} size={17} /></button>
         </div>
       </aside>
@@ -578,6 +675,39 @@ function App() {
           <div className="details-block"><span className="section-label">SHARED FILES</span><div className="shared-file"><Icon name="file" size={18} /><span><strong>Brand exploration.fig</strong><small>Shared today</small></span></div></div>
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
+      )}
+
+      {showAvatarPicker && (
+        <div className="modal-backdrop avatar-picker-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAvatarPicker(false) }}>
+          <section className="avatar-picker-modal" role="dialog" aria-modal="true" aria-labelledby="avatar-picker-title">
+            <div className="modal-heading">
+              <div>
+                <div className="eyebrow">YOUR PROFILE</div>
+                <h2 id="avatar-picker-title">Choose your avatar</h2>
+                <p>Select one of 10 built-in illustrations. Profile photo uploads are not available.</p>
+              </div>
+              <button className="icon-button" onClick={() => setShowAvatarPicker(false)} aria-label="Close avatar picker"><Icon name="close" /></button>
+            </div>
+            <div className="avatar-gender-tabs" role="group" aria-label="Avatar style">
+              <button className={avatarPickerGender === 'male' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('male'); if (!draftAvatar.startsWith('male')) setDraftAvatar('male-01') }}>Male avatars <span>5</span></button>
+              <button className={avatarPickerGender === 'female' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('female'); if (!draftAvatar.startsWith('female')) setDraftAvatar('female-01') }}>Female avatars <span>5</span></button>
+            </div>
+            <div className="avatar-choice-grid">
+              {avatarOptions.filter((avatar) => avatar.gender === avatarPickerGender).map((avatar) => (
+                <button key={avatar.id} className={'avatar-choice' + (draftAvatar === avatar.id ? ' selected' : '')} onClick={() => setDraftAvatar(avatar.id)} aria-pressed={draftAvatar === avatar.id}>
+                  <Avatar person={{ avatarId: avatar.id }} size="picker" />
+                  <span>{avatar.label}</span>
+                  {draftAvatar === avatar.id && <i><Icon name="check" size={12} /></i>}
+                </button>
+              ))}
+            </div>
+            <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from the 10 preset avatars. You can change your selection anytime.</div>
+            <div className="avatar-picker-actions">
+              <button className="secondary-button" onClick={() => setShowAvatarPicker(false)}>Cancel</button>
+              <button className="primary-button" onClick={saveAvatarSelection}><Icon name="check" size={15} /> Use this avatar</button>
+            </div>
+          </section>
+        </div>
       )}
 
       {showNewChat && (
