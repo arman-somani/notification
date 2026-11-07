@@ -285,7 +285,7 @@ function App() {
 
     if (listFilter === 'unread') items = items.filter((item) => item.unread > 0)
     const query = search.trim().toLowerCase()
-    if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || item.preview.toLowerCase().includes(query))
+    if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
     return [...items].sort((a, b) => Number(b.pinned) - Number(a.pinned))
   }, [conversations, directory, listFilter, search, view])
 
