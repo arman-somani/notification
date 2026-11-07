@@ -1354,3 +1354,12 @@
   }
   @keyframes details-drawer-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 }
+
+
+/* Shared identity component used by contact rows, chat headers and detail panels. */
+.chat-person,
+.details-person-identity { min-width:0; }
+.details-person-identity { display:flex; flex-direction:column; align-items:center; gap:0; }
+.details-person-identity > span:last-child { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.details-person-identity strong { margin-top:12px; color:var(--text); font-size:12px; font-weight:700; }
+.details-person-identity .details-status { margin-top:0; color:var(--text-soft); font-size:9px; }
