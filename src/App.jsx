@@ -849,7 +849,10 @@ function App() {
               <button onClick={toggleFavorite}><Icon name="star" size={17} />{activeConversation.favorite ? 'Starred' : 'Star'}</button>
             </div>
           </div>
-          <div className="details-block"><span className="section-label">ABOUT</span><p>Available for thoughtful conversations and good ideas.</p></div>
+          {activeConversation.status === 'group' && <div className="details-block group-management-block"><span className="section-label">GROUP MEMBERS · {(activeConversation.memberIds || []).length}</span>
+            {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, moderators: (item.moderators || []).includes(memberId) ? (item.moderators || []).filter((id) => id !== memberId) : [...(item.moderators || []), memberId] } : item))}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
+            {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberId = event.target.value; if (memberId) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, memberIds: [...new Set([...(item.memberIds || []), memberId])], members: (new Set([...(item.memberIds || []), memberId])).size + ' members' } : item)) }}><option value="" disabled>Add a member…</option>{directory.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
+          </div>}<div className="details-block"><span className="section-label">ABOUT</span><p>Available for thoughtful conversations and good ideas.</p></div>
           <div className="details-block"><span className="section-label">SHARED FILES</span><div className="shared-file"><Icon name="file" size={18} /><span><strong>Brand exploration.fig</strong><small>Shared today</small></span></div></div>
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
@@ -907,7 +910,7 @@ function App() {
               <div><div className="eyebrow">MAKE A CONNECTION</div><h2 id="new-chat-title">New conversation</h2><p>Who would you like to talk to?</p></div>
               <button className="icon-button" onClick={() => setShowNewChat(false)} aria-label="Close new conversation"><Icon name="close" /></button>
             </div>
-            <button className="create-group-launch" onClick={() => setShowGroupCreator(true)}><Icon name="users" size={16} /> Create a group</button>
+            <button className="create-group-launch" onClick={() => { setShowNewChat(false); setShowGroupCreator(true) }}><Icon name="users" size={16} /> Create a group</button>
             <label className="search-box modal-search"><Icon name="search" size={17} /><input autoFocus value={newChatSearch} onChange={(event) => setNewChatSearch(event.target.value)} placeholder="Find someone by name" /></label>
             <div className="directory-list">
               {filteredDirectory.length ? filteredDirectory.map((person) => (
