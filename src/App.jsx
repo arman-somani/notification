@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDoc, getDocs, limit, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
@@ -933,11 +933,11 @@ function App({ profile, onLogout }) {
     const requestId = uid + '_' + person.id
     setFriendActionBusy(person.id)
     try {
-      await runTransaction(db, async (transaction) => {
-        const requestRef = doc(db, 'friendRequests', requestId)
-        const existing = await transaction.get(requestRef)
-        if (existing.exists()) throw new Error('A request already exists for this person.')
-        transaction.set(requestRef, { senderId: uid, recipientId: person.id, status: 'pending', createdAt: serverTimestamp() })
+      await setDoc(doc(db, 'friendRequests', requestId), {
+        senderId: uid,
+        recipientId: person.id,
+        status: 'pending',
+        createdAt: serverTimestamp(),
       })
       setOutgoingFriendRequests((items) => [...items, { id: requestId, senderId: uid, recipientId: person.id, status: 'pending' }])
       showToast('Friend request sent to @' + person.username)
