@@ -1122,3 +1122,54 @@
   .voice-recording-live i { opacity: .8; }
   .voice-waveform i { height: 10px; }
 }
+
+
+/* Expanded quick reactions */
+.message-reaction-picker {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 8px;
+  margin-top: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  animation: reaction-picker-in .14s ease-out both;
+}
+.message-reaction-picker button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, transform .14s ease;
+}
+.message-reaction-picker button:hover,
+.message-reaction-picker button:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  transform: translateY(-2px);
+  outline: none;
+}
+@keyframes reaction-picker-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 520px) {
+  .message-reaction-picker { gap: 3px; padding: 6px; }
+  .message-reaction-picker button { width: 32px; height: 32px; font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-reaction-picker { animation: none; }
+  .message-reaction-picker button { transition: none; }
+}
