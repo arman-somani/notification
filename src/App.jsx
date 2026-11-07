@@ -262,6 +262,8 @@ function App() {
   const [scheduleAt, setScheduleAt] = useState('')
   const [viewOnceImage, setViewOnceImage] = useState(null)
   const [recording, setRecording] = useState(false)
+  const [recordingElapsed, setRecordingElapsed] = useState(0)
+  const [recordingPreview, setRecordingPreview] = useState(null)
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
   const [showGroupCreator, setShowGroupCreator] = useState(false)
@@ -279,6 +281,11 @@ function App() {
   const [compactMode, setCompactMode] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const mediaRecorderRef = useRef(null)
+  const recordingHoldRef = useRef(false)
+  const recordingStreamRef = useRef(null)
+  const recordingChunksRef = useRef([])
+  const recordingStartedAtRef = useRef(0)
+  const recordingCancelledRef = useRef(false)
   const [profileAvatar, setProfileAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
@@ -286,6 +293,14 @@ function App() {
   const messageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    if (!recording) return undefined
+    const timer = window.setInterval(() => {
+      setRecordingElapsed(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [recording])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -457,21 +472,92 @@ function App() {
   }
 
   const startVoiceRecording = async () => {
-    if (recording) { mediaRecorderRef.current?.stop(); return }
+    if (recordingHoldRef.current || recording || recordingPreview) return
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { showToast('Voice recording is not supported in this browser'); return }
+
+    recordingHoldRef.current = true
+    recordingCancelledRef.current = false
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream), chunks = []
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-        const mediaUrl = URL.createObjectURL(blob)
-        const message = { id: 'voice-' + Date.now(), from: 'me', type: 'audio', mediaUrl, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-        setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now' } : item))
-        stream.getTracks().forEach((track) => track.stop()); setRecording(false); mediaRecorderRef.current = null
+      if (!recordingHoldRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
       }
-      mediaRecorderRef.current = recorder; recorder.start(); setRecording(true)
-    } catch { showToast('Microphone permission was not granted') }
+
+      const recorder = new MediaRecorder(stream)
+      recordingStreamRef.current = stream
+      recordingChunksRef.current = []
+      recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data) }
+      recorder.onstop = () => {
+        const chunks = recordingChunksRef.current
+        const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000))
+        stream.getTracks().forEach((track) => track.stop())
+        recordingStreamRef.current = null
+
+        if (!recordingCancelledRef.current && chunks.length) {
+          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+          const url = URL.createObjectURL(blob)
+          setRecordingPreview({ url, durationSeconds })
+        } else if (!recordingCancelledRef.current) {
+          showToast('No audio was captured. Please try recording again.')
+        }
+
+        recordingCancelledRef.current = false
+        recordingHoldRef.current = false
+        mediaRecorderRef.current = null
+        setRecording(false)
+        setRecordingElapsed(0)
+      }
+
+      mediaRecorderRef.current = recorder
+      recordingStartedAtRef.current = Date.now()
+      recorder.start(150)
+      setRecording(true)
+      setRecordingElapsed(0)
+    } catch {
+      recordingHoldRef.current = false
+      setRecording(false)
+      showToast('Microphone permission was not granted')
+    }
+  }
+
+  const stopVoiceRecording = () => {
+    recordingHoldRef.current = false
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+  }
+
+  const cancelVoiceRecording = () => {
+    recordingCancelledRef.current = true
+    recordingHoldRef.current = false
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop()
+    } else {
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+      recordingStreamRef.current = null
+      setRecording(false)
+    }
+  }
+
+  const discardVoicePreview = () => {
+    if (recordingPreview?.url) URL.revokeObjectURL(recordingPreview.url)
+    setRecordingPreview(null)
+  }
+
+  const sendVoicePreview = () => {
+    if (!recordingPreview) return
+    const message = {
+      id: 'voice-' + Date.now(),
+      from: 'me',
+      type: 'audio',
+      mediaUrl: recordingPreview.url,
+      durationSeconds: recordingPreview.durationSeconds,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      status: 'sent',
+    }
+    setConversations((items) => items.map((item) => item.id === activeId
+      ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now' }
+      : item))
+    setRecordingPreview(null)
   }
 
   const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
@@ -855,16 +941,63 @@ function App() {
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
+              {recording && (
+                <div className="voice-recording-status" role="status" aria-live="polite">
+                  <span className="voice-recording-live"><i /> REC</span>
+                  <span className="voice-waveform" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></span>
+                  <strong>{Math.floor(recordingElapsed / 60)}:{String(recordingElapsed % 60).padStart(2, '0')}</strong>
+                  <small>Release to finish</small>
+                </div>
+              )}
+              {recordingPreview && (
+                <div className="voice-preview-panel">
+                  <div className="voice-preview-heading"><strong>Voice message preview</strong><span>Listen before sending · {Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span></div>
+                  <audio className="voice-preview-player" controls preload="metadata" src={recordingPreview.url} />
+                  <div className="voice-preview-actions">
+                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview}>Discard</button>
+                    <button type="button" className="voice-send-button" onClick={sendVoicePreview}><Icon name="send" size={14} /> Send voice message</button>
+                  </div>
+                </div>
+              )}
               <div className="composer">
                 <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
                 <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>
                 <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
                 <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                 <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>
-                <button type="button" className={'composer-action voice-record-button' + (recording ? ' recording' : '')} onClick={startVoiceRecording} aria-label={recording ? 'Stop voice recording' : 'Record a voice message'} title={recording ? 'Stop recording' : 'Record voice message'}><Icon name="mic" size={19} /></button>
+                <span className="voice-record-control">
+                  <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
+                  <button
+                    type="button"
+                    className={'composer-action voice-record-button' + (recording ? ' recording' : '')}
+                    disabled={Boolean(recordingPreview)}
+                    onPointerDown={(event) => {
+                      if (event.pointerType === 'mouse' && event.button !== 0) return
+                      event.preventDefault()
+                      event.currentTarget.setPointerCapture?.(event.pointerId)
+                      startVoiceRecording()
+                    }}
+                    onPointerUp={stopVoiceRecording}
+                    onPointerCancel={cancelVoiceRecording}
+                    onKeyDown={(event) => {
+                      if (event.key === ' ' || event.key === 'Enter') {
+                        event.preventDefault()
+                        startVoiceRecording()
+                      }
+                    }}
+                    onKeyUp={(event) => {
+                      if (event.key === ' ' || event.key === 'Enter') {
+                        event.preventDefault()
+                        stopVoiceRecording()
+                      }
+                    }}
+                    onContextMenu={(event) => event.preventDefault()}
+                    aria-label={recording ? 'Recording. Release to finish' : 'Hold to record a voice message'}
+                  ><Icon name="mic" size={19} /></button>
+                </span>
                 <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… select the mic to finish' : scheduleAt ? 'Your message will be scheduled' : 'Drafts save automatically in this browser'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : scheduleAt ? 'Your message will be scheduled' : 'Drafts save automatically in this browser'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
             </form>
           </section>
         ) : (
