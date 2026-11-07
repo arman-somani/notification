@@ -70,7 +70,11 @@ service cloud.firestore {
     }
 
     match /friendRequests/{requestId} {
-      allow read: if signedIn()
+      allow get: if signedIn()
+        && (!exists(/databases/$(database)/documents/friendRequests/$(requestId))
+          || resource.data.senderId == request.auth.uid
+          || resource.data.recipientId == request.auth.uid);
+      allow list: if signedIn()
         && (resource.data.senderId == request.auth.uid || resource.data.recipientId == request.auth.uid);
       allow create: if signedIn()
         && requestId == request.auth.uid + '_' + request.resource.data.recipientId
@@ -80,7 +84,11 @@ service cloud.firestore {
         && request.resource.data.status == 'pending'
         && request.resource.data.keys().hasOnly(['senderId', 'recipientId', 'status', 'createdAt'])
         && exists(/databases/$(database)/documents/users/$(request.resource.data.recipientId))
-        && get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.discoverable != false;
+        && (
+          !('privacy' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data)
+          || !('discoverable' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy)
+          || get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.discoverable != false
+        );
       allow update: if signedIn()
         && resource.data.recipientId == request.auth.uid
         && resource.data.status == 'pending'
