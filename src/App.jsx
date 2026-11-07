@@ -356,11 +356,8 @@ function App() {
   }
 
   const openAvatarPicker = () => {
-    const currentAvatar = avatarOptions.find((option) => option.id === profileAvatar) || avatarOptions[0]
-    setDraftAvatar(currentAvatar.id)
-    setAvatarPickerGender(currentAvatar.gender)
     setProfileMenuOpen(false)
-    setShowAvatarPicker(true)
+    showToast('Profile avatars are preset and cannot be changed.')
   }
 
   const saveAvatarSelection = () => {
@@ -582,7 +579,7 @@ function App() {
             <div className="profile-popover">
               <strong>Your profile</strong>
               <span>Available</span>
-              <button onClick={openAvatarPicker}><Icon name="image" size={15} /> Choose avatar</button>
+              <span className="profile-avatar-lock"><Icon name="shield" size={13} /> Preset profile avatar</span>
               <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>
             </div>
           )}
@@ -667,7 +664,7 @@ function App() {
         </nav>
 
         <div className="inbox-footer">
-          <button className="footer-profile" onClick={openAvatarPicker} aria-label="Choose your profile avatar">
+          <button className="footer-profile" onClick={() => { setView("settings"); setMobileChatOpen(false) }} aria-label="Open profile settings">
             <Avatar person={{ avatarId: profileAvatar, initials: 'Y' }} size="footer" />
             <span><strong>Your workspace</strong><small>Choose your avatar</small></span>
           </button>
