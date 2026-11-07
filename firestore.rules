@@ -18,6 +18,323 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn()
         && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['displayName', 'username', 'avatarId', 'createdAt', 'updatedAt'])
+        && request.resource.data.username is string
+        && request.resource.data.username.matches('^[a-z0-9_]{3,20}
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'avatarId', 'bio', 'privacy', 'updatedAt'])
+        && request.resource.data.username == resource.data.username
+        && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
+      allow delete: if false;
+
+      match /inbox/{conversationId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if signedIn() && request.auth.uid == uid
+          && isConversationMember(conversationId);
+      }
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if signedIn() && request.auth.uid == uid;
+        allow create: if false;
+      }
+
+      match /blocks/{blockedUid} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+
+      match /devices/{deviceId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
+    match /usernames/{normalizedUsername} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && normalizedUsername.matches('^[a-z0-9_]{3,20}
+
+    match /conversations/{conversationId} {
+      allow read: if isConversationMember(conversationId);
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds is list
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if isConversationMember(conversationId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview']);
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update, delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if isConversationMember(conversationId);
+        allow create: if isConversationMember(conversationId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
+          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'type', 'text', 'createdAt', 'editedAt',
+            'replyToId', 'attachmentPath', 'viewOnce', 'expiresAt',
+            'forwardedFrom', 'mentionIds'
+          ]);
+        allow update: if isConversationMember(conversationId)
+          && resource.data.senderId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['text', 'editedAt', 'deletedAt']);
+        allow delete: if false;
+      }
+
+      match /polls/{pollId} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update: if isConversationMember(conversationId);
+        allow delete: if false;
+
+        match /votes/{uid} {
+          allow read: if isConversationMember(conversationId);
+          allow create, update: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+          allow delete: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+        }
+      }
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /adminAuditLogs/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == request.auth.uid
+        && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'username', 'avatarId', 'bio', 'privacy', 'updatedAt'])
+        && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
+      allow delete: if false;
+
+      match /inbox/{conversationId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if signedIn() && request.auth.uid == uid
+          && isConversationMember(conversationId);
+      }
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if signedIn() && request.auth.uid == uid;
+        allow create: if false;
+      }
+
+      match /blocks/{blockedUid} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+
+      match /devices/{deviceId} {
+        allow read, write: if signedIn() && request.auth.uid == uid;
+      }
+    }
+
+    match /usernames/{normalizedUsername} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isConversationMember(conversationId);
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds is list
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if isConversationMember(conversationId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview']);
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update, delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if isConversationMember(conversationId);
+        allow create: if isConversationMember(conversationId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
+          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'type', 'text', 'createdAt', 'editedAt',
+            'replyToId', 'attachmentPath', 'viewOnce', 'expiresAt',
+            'forwardedFrom', 'mentionIds'
+          ]);
+        allow update: if isConversationMember(conversationId)
+          && resource.data.senderId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['text', 'editedAt', 'deletedAt']);
+        allow delete: if false;
+      }
+
+      match /polls/{pollId} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update: if isConversationMember(conversationId);
+        allow delete: if false;
+
+        match /votes/{uid} {
+          allow read: if isConversationMember(conversationId);
+          allow create, update: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+          allow delete: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+        }
+      }
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /adminAuditLogs/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == normalizedUsername;
+      // A claimed username is permanent. Only a trusted admin migration may ever release one.
+      allow update, delete: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isConversationMember(conversationId);
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds is list
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if isConversationMember(conversationId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview']);
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update, delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if isConversationMember(conversationId);
+        allow create: if isConversationMember(conversationId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
+          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'type', 'text', 'createdAt', 'editedAt',
+            'replyToId', 'attachmentPath', 'viewOnce', 'expiresAt',
+            'forwardedFrom', 'mentionIds'
+          ]);
+        allow update: if isConversationMember(conversationId)
+          && resource.data.senderId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['text', 'editedAt', 'deletedAt']);
+        allow delete: if false;
+      }
+
+      match /polls/{pollId} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update: if isConversationMember(conversationId);
+        allow delete: if false;
+
+        match /votes/{uid} {
+          allow read: if isConversationMember(conversationId);
+          allow create, update: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+          allow delete: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+        }
+      }
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /adminAuditLogs/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == request.auth.uid
         && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
       allow update: if signedIn()
         && request.auth.uid == uid
