@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import AccountPrivacyPanel from './AccountPrivacyPanel'
 
 const initialConversations = [
   {
@@ -684,6 +685,7 @@ function App() {
               <p>Make Notification feel like yours.</p>
             </div>
             <div className="settings-content">
+              <AccountPrivacyPanel />
               <div className="settings-section">
                 <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
                 <div className="setting-row">
