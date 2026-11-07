@@ -1,7 +1,7 @@
 # View-once image security design
 
 ## Required behavior
-A sender can choose View once when attaching an image. The recipient sees a locked preview and must choose Open once. After a successful open, the image becomes consumed and cannot be opened again from Notification.
+Every image sent in Notification is automatically view-once; there is no toggle or normal-image mode. The sender sees their sent image in their own chat, but that does not consume the recipient's open. The recipient sees a locked preview and must explicitly open it. On the first successful open, it is consumed and cannot be opened again from Notification.
 
 ## Do not use a permanent Storage URL
 Hiding an image after rendering it, deleting a React component, or changing localStorage is not security. A client can replay requests and a permanent download URL can be reused.
@@ -25,9 +25,11 @@ Hiding an image after rendering it, deleting a React component, or changing loca
 - If end-to-end encryption is adopted later, redesign the flow so the service cannot decrypt the image.
 
 ## Acceptance tests
-- Authorized recipient can open once.
+- Every new image message is created as viewOnce=true by default.
+- There is no user-selectable off switch or normal-image path.
+- Authorized recipient can explicitly open once.
 - Two simultaneous open requests result in exactly one success.
-- Sender cannot consume the recipient's view.
+- Sender can still see their own sent image but cannot consume the recipient's view.
 - Non-members and blocked users cannot open.
 - Expired images cannot open.
 - Replayed requests cannot open again.
