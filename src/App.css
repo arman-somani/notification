@@ -791,3 +791,18 @@
   .mobile-nav-bar { min-height: 54px; }
   .mobile-nav-bar button span { font-size: 8px; }
 }
+
+.settings-mobile-back { display: none; }
+
+@media (max-width: 760px) {
+  .settings-mobile-back {
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 15px -5px;
+    padding: 7px 9px;
+    color: var(--text-soft);
+    font-size: 11px;
+  }
+}
