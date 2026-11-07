@@ -115,7 +115,7 @@ export default function AccountPrivacyPanel() {
       {reports.length > 0 && <div className="local-story-list"><strong>Reports saved on this device</strong>{reports.slice(0, 5).map((report) => <div key={report.id}><span>@{report.target} · {report.reason}</span><small>{new Date(report.createdAt).toLocaleString()} · {report.status}</small></div>)}</div>}
       <div className="verified-note"><span className="verified-label">✓ Verified accounts</span> are assigned by administrators after review. Verification cannot be self-selected.</div>
       {notice && <p className="account-notice" role="status">{notice}</p>}
-      <p className="account-security-note">These settings currently stay in this browser. Firebase Authentication, global username reservations, user discovery, report delivery/review, blocking, contact privacy, stories visibility and verified badges still need trusted server-side enforcement before public launch.</p>
+      <p className="account-security-note">These settings currently stay in this browser. Firebase Authentication, global username reservations, user discovery, report delivery/review, blocking, contact privacy and verified badges still need trusted server-side enforcement before public launch.</p>
     </section>
   )
 }
