@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDoc, getDocs, limit, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
@@ -384,6 +384,7 @@ function App({ profile, onLogout }) {
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
+  const [friendRequestError, setFriendRequestError] = useState('')
   const [showFriendRequests, setShowFriendRequests] = useState(false)
   const [outgoingFriendRequests, setOutgoingFriendRequests] = useState([])
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
@@ -453,6 +454,47 @@ function App({ profile, onLogout }) {
   }, [])
 
   useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return undefined
+    let active = true
+    setFriendRequestError('')
+    const requestsQuery = query(
+      collection(db, 'friendRequests'),
+      where('recipientId', '==', uid),
+      where('status', '==', 'pending'),
+    )
+    const unsubscribe = onSnapshot(requestsQuery, async (snapshot) => {
+      try {
+        const incoming = await Promise.all(snapshot.docs.map(async (item) => {
+          const request = { id: item.id, ...item.data() }
+          const senderSnapshot = await getDoc(doc(db, 'users', request.senderId))
+          const sender = senderSnapshot.exists() ? senderSnapshot.data() : {}
+          return {
+            ...request,
+            senderName: sender.displayName || sender.username || 'New user',
+            senderUsername: sender.username,
+            senderAvatarId: sender.avatarId,
+          }
+        }))
+        if (active) {
+          setIncomingFriendRequests(incoming)
+          setFriendRequestError('')
+        }
+      } catch (error) {
+        if (active) setFriendRequestError(error?.message || 'Could not load friend request details.')
+      }
+    }, (error) => {
+      if (active) setFriendRequestError(error?.code === 'permission-denied'
+        ? 'Firestore rules denied access to incoming friend requests. Deploy the latest firestore.rules.'
+        : error?.message || 'Could not load friend requests.')
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [auth?.currentUser?.uid])
+
+  useEffect(() => {
     if ((!showNewChat && !showFriendRequests) || !auth?.currentUser || !db) return undefined
     let cancelled = false
     const loadPeopleAndRequests = async () => {
@@ -461,19 +503,10 @@ function App({ profile, onLogout }) {
       try {
         const uid = auth.currentUser.uid
         const usernameTerm = newChatSearch.trim().toLowerCase().replace(/^@/, '')
-        const [incomingSnapshot, outgoingSnapshot, contactsSnapshot] = await Promise.all([
-          getDocs(query(collection(db, 'friendRequests'), where('recipientId', '==', uid))),
+        const [outgoingSnapshot, contactsSnapshot] = await Promise.all([
           getDocs(query(collection(db, 'friendRequests'), where('senderId', '==', uid))),
           getDocs(collection(db, 'users', uid, 'contacts')),
         ])
-        const incoming = await Promise.all(incomingSnapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() }))
-          .filter((item) => item.status === 'pending')
-          .map(async (request) => {
-            const senderSnapshot = await getDoc(doc(db, 'users', request.senderId))
-            const sender = senderSnapshot.exists() ? senderSnapshot.data() : {}
-            return { ...request, senderName: sender.displayName || sender.username || 'New user', senderUsername: sender.username, senderAvatarId: sender.avatarId }
-          }))
         const outgoing = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
         const contacts = await Promise.all(contactsSnapshot.docs.map(async (item) => {
           const profileSnapshot = await getDoc(doc(db, 'users', item.id))
@@ -498,14 +531,13 @@ function App({ profile, onLogout }) {
             })
         }
         if (!cancelled) {
-          setIncomingFriendRequests(incoming)
           setOutgoingFriendRequests(outgoing)
           setFriendContacts(contacts.filter(Boolean))
           setDiscoveredUsers(matches)
         }
       } catch (error) {
         if (!cancelled) setDiscoveryError(error?.code === 'permission-denied'
-          ? 'Firebase rules are blocking user discovery. Check the deployed Firestore rules.'
+          ? 'Firestore denied access while loading people or sent requests. Deploy the latest firestore.rules and retry.'
           : error?.message || 'Could not load people. Please try again.')
       } finally {
         if (!cancelled) setDiscoveryLoading(false)
@@ -514,7 +546,6 @@ function App({ profile, onLogout }) {
     loadPeopleAndRequests()
     return () => { cancelled = true }
   }, [showNewChat, showFriendRequests, newChatSearch])
-
 
 
   useEffect(() => {
@@ -1072,22 +1103,24 @@ function App({ profile, onLogout }) {
           <kbd>/</kbd>
         </label>
 
-        <div className="filter-row">
+        <div className="filter-row inbox-filter-row">
           <button className={listFilter === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setListFilter('all')}>All <span>{conversations.filter((item) => !item.archived).length}</span></button>
           <button className={listFilter === 'unread' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setListFilter('unread')}>Unread <span>{conversations.filter((item) => item.unread > 0 && !item.archived).length}</span></button>
-        </div>
-
-        <div className="filter-row friend-filter-row">
-          <button className={showFriendRequests ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setShowFriendRequests((open) => !open); setListFilter('all') }}>
-            <Icon name="user-plus" size={13} /> Requests <span>{incomingFriendRequests.length}</span>
+          <button
+            className={showFriendRequests ? 'filter-chip request-filter-chip selected' : 'filter-chip request-filter-chip'}
+            onClick={() => { setShowFriendRequests((open) => !open); setListFilter('all') }}
+            aria-expanded={showFriendRequests}
+            aria-label="Friend requests"
+          >
+            <Icon name="user-plus" size={13} /> Requests <span className={incomingFriendRequests.length ? 'request-count has-requests' : 'request-count'}>{incomingFriendRequests.length}</span>
           </button>
         </div>
         {showFriendRequests && (
           <div className="friend-section sidebar-friend-section">
             <div className="friend-section-heading">FRIEND REQUESTS <span>{incomingFriendRequests.length}</span></div>
             {discoveryLoading && <div className="directory-empty">Loading friend requests…</div>}
-            {discoveryError && <div className="directory-empty friend-error">{discoveryError}</div>}
-            {!discoveryLoading && !discoveryError && incomingFriendRequests.length === 0 && <div className="directory-empty">No pending friend requests.</div>}
+            {friendRequestError && <div className="directory-empty friend-error">{friendRequestError}</div>}
+            {!discoveryLoading && !friendRequestError && incomingFriendRequests.length === 0 && <div className="directory-empty">No pending friend requests. New requests will appear here automatically.</div>}
             {incomingFriendRequests.map((request) => (
               <div className="friend-request-row" key={request.id}>
                 <Avatar person={{ name: request.senderName || 'New user', avatarId: request.senderAvatarId }} size="md" />
