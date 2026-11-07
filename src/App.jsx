@@ -334,7 +334,7 @@ function App() {
   const [view, setView] = useState('messages')
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
-  const [messageText, setMessageText] = useState(() => localStorage.getItem('notification-draft-alex') || '')
+  const [messageText, setMessageText] = useState('')
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState(null)
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null)
@@ -343,7 +343,6 @@ function App() {
   const [forwardMessageId, setForwardMessageId] = useState(null)
   const [messageSearchOpen, setMessageSearchOpen] = useState(false)
   const [messageSearch, setMessageSearch] = useState('')
-  const [scheduleAt, setScheduleAt] = useState('')
   const [viewOnceImage, setViewOnceImage] = useState(null)
   const [recording, setRecording] = useState(false)
   const [recordingElapsed, setRecordingElapsed] = useState(0)
@@ -407,14 +406,9 @@ function App() {
   }, [conversations])
 
   useEffect(() => {
-    setMessageText(localStorage.getItem('notification-draft-' + activeId) || '')
     setReplyTarget(null); setEditingMessageId(null); setSelectedMessageId(null)
     setMessageSearch(''); setMessageSearchOpen(false)
   }, [activeId])
-
-  useEffect(() => {
-    try { localStorage.setItem('notification-draft-' + activeId, messageText) } catch { /* best effort */ }
-  }, [activeId, messageText])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -423,7 +417,6 @@ function App() {
         let changed = false
         const next = items.map((conversation) => {
           const messages = conversation.messages.map((message) => {
-            if (message.status === 'scheduled' && message.scheduledAt <= now) { changed = true; return { ...message, status: 'sent', time: 'Just now' } }
             return message
           }).filter((message) => { const keep = !message.expiresAt || message.expiresAt > now; if (!keep) changed = true; return keep })
           return messages.length === conversation.messages.length && !messages.some((message, index) => message !== conversation.messages[index]) ? conversation : { ...conversation, messages }
@@ -507,7 +500,7 @@ function App() {
       const messages = item.messages.map((message) => {
         const wasSeenByRecipient = message.from === 'me' && message.read === true
         const isReceivedHere = message.from !== 'me'
-        if (message.status === 'scheduled' || message.seenAt || (!wasSeenByRecipient && !isReceivedHere)) return message
+        if (message.seenAt || (!wasSeenByRecipient && !isReceivedHere)) return message
         conversationChanged = true
         return { ...message, seenAt, expiresAt: seenAt + MESSAGE_RETENTION_MS }
       })
@@ -531,17 +524,14 @@ function App() {
       setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
-    const sendAt = scheduleAt ? new Date(scheduleAt).getTime() : 0
-    if (scheduleAt && (!Number.isFinite(sendAt) || sendAt <= Date.now())) { showToast('Choose a future time for scheduled messages'); return }
     const message = {
       id: 'm-' + Date.now(), from: 'me', type: 'text', text,
       time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: sendAt ? 'scheduled' : 'sent',
-      ...(sendAt ? { scheduledAt: sendAt } : {}),
+      status: 'sent',
       ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
     }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: sendAt ? 'Scheduled message' : text, time: 'Now' } : item))
-    setMessageText(''); setReplyTarget(null); setScheduleAt(''); messageInputRef.current?.focus()
+    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now' } : item))
+    setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
   const handleFile = (event) => {
@@ -1060,7 +1050,7 @@ function App() {
                         <div className="message-bubble">{message.text}</div>
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
-                      <span className="message-meta">{message.status === 'scheduled' ? 'Scheduled · ' : ''}{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
+                      <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
                       {!isAudioMessage(message) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
@@ -1073,7 +1063,7 @@ function App() {
                             ))}
                           </div>
                         )}
-                        {message.from === 'me' && message.type === 'text' && message.status !== 'scheduled' && <button type="button" onClick={() => beginEdit(message)}>Edit</button>}
+                        {message.from === 'me' && message.type === 'text' && <button type="button" onClick={() => beginEdit(message)}>Edit</button>}
                         <button type="button" onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, pinned: !entry.pinned } : entry) } : item))}>{message.pinned ? 'Unpin' : 'Pin'}</button>
                         <button type="button" onClick={() => setForwardMessageId((current) => current === message.id ? null : message.id)}>Forward</button>
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
@@ -1168,7 +1158,7 @@ function App() {
                 </span>}
                 {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : scheduleAt ? 'Your message will be scheduled' : 'Drafts save automatically in this browser'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
             </form>
           </section>
         ) : (
