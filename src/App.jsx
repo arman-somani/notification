@@ -527,7 +527,7 @@ function App() {
           <button className={view === 'contacts' ? 'selected' : ''} onClick={() => setView('contacts')}><Icon name="users" size={17} /><span>Contacts</span></button>
           <button className={view === 'starred' ? 'selected' : ''} onClick={() => setView('starred')}><Icon name="star" size={17} /><span>Starred</span></button>
           <button className={view === 'archive' ? 'selected' : ''} onClick={() => setView('archive')}><Icon name="archive" size={17} /><span>Archive</span></button>
-          <button className={view === 'settings' ? 'selected' : ''} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>Settings</span></button>
+          <button className={view === 'settings' ? 'selected' : ''} onClick={() => { setView('settings'); setMobileChatOpen(true) }}><Icon name="settings" size={17} /><span>Settings</span></button>
         </nav>
 
         <div className="inbox-footer">
@@ -542,6 +542,7 @@ function App() {
       <main className={'main-panel' + (mobileChatOpen ? ' mobile-visible' : '')}>
         {view === 'settings' ? (
           <section className="settings-view">
+            <button className="settings-mobile-back" onClick={() => setMobileChatOpen(false)}><Icon name="arrowLeft" size={16} /> Back to chats</button>
             <div className="settings-header">
               <div className="eyebrow">PREFERENCES</div>
               <h2>Settings</h2>
