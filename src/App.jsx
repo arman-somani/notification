@@ -140,6 +140,8 @@ const MESSAGE_RETENTION_MS = 86400000
 // Treat every audio-backed message as a voice message, even if its type metadata differs.
 const isAudioMessage = (message) => message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
 
+const composerEmojiOptions = ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😍','🥰','😘','😋','😎','🤩','🥳','🤔','🤗','🤭','😴','😭','😢','😡','😮','😱','🙏','👏','👍','👎','👌','✌️','🤝','🙌','💪','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💯','🔥','✨','🎉','🎂','🌹','☀️','🌙','⭐','☕','🍕','🎈','💡','✅','❌']
+
 const reactionOptions = [
   { emoji: '👍', label: 'Like' },
   { emoji: '❤️', label: 'Love' },
@@ -333,6 +335,7 @@ function App() {
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
   const [messageText, setMessageText] = useState(() => localStorage.getItem('notification-draft-alex') || '')
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState(null)
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState(null)
   const [replyTarget, setReplyTarget] = useState(null)
@@ -1123,7 +1126,16 @@ function App() {
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
-                {!recordingPreview && <button type="button" className="composer-action emoji-action" onClick={() => setMessageText((text) => text + ' 😊')} aria-label="Add a smile" title="Add a smile"><Icon name="smile" size={19} /></button>}
+                {!recordingPreview && <span className="emoji-picker-control">
+                  <span className="emoji-picker-tooltip">Choose an emoji</span>
+                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
+                  {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
+                    <div className="composer-emoji-picker-heading"><strong>Choose an emoji</strong><button type="button" onClick={() => setEmojiPickerOpen(false)} aria-label="Close emoji picker"><Icon name="close" size={14} /></button></div>
+                    <div className="composer-emoji-grid">
+                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
+                    </div>
+                  </div>}
+                </span>}
                 {!recordingPreview && <span className="voice-record-control">
                   <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
                   <button
