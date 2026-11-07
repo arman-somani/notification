@@ -384,6 +384,7 @@ function App({ profile, onLogout }) {
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
+  const [showFriendRequests, setShowFriendRequests] = useState(false)
   const [outgoingFriendRequests, setOutgoingFriendRequests] = useState([])
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryError, setDiscoveryError] = useState('')
@@ -452,7 +453,7 @@ function App({ profile, onLogout }) {
   }, [])
 
   useEffect(() => {
-    if (!showNewChat || !auth?.currentUser || !db) return undefined
+    if ((!showNewChat && !showFriendRequests) || !auth?.currentUser || !db) return undefined
     let cancelled = false
     const loadPeopleAndRequests = async () => {
       setDiscoveryLoading(true)
@@ -512,7 +513,7 @@ function App({ profile, onLogout }) {
     }
     loadPeopleAndRequests()
     return () => { cancelled = true }
-  }, [showNewChat, newChatSearch])
+  }, [showNewChat, showFriendRequests, newChatSearch])
 
 
 
@@ -1075,6 +1076,28 @@ function App({ profile, onLogout }) {
           <button className={listFilter === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setListFilter('all')}>All <span>{conversations.filter((item) => !item.archived).length}</span></button>
           <button className={listFilter === 'unread' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setListFilter('unread')}>Unread <span>{conversations.filter((item) => item.unread > 0 && !item.archived).length}</span></button>
         </div>
+
+        <div className="filter-row friend-filter-row">
+          <button className={showFriendRequests ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setShowFriendRequests((open) => !open); setListFilter('all') }}>
+            <Icon name="user-plus" size={13} /> Requests <span>{incomingFriendRequests.length}</span>
+          </button>
+        </div>
+        {showFriendRequests && (
+          <div className="friend-section sidebar-friend-section">
+            <div className="friend-section-heading">FRIEND REQUESTS <span>{incomingFriendRequests.length}</span></div>
+            {discoveryLoading && <div className="directory-empty">Loading friend requests…</div>}
+            {discoveryError && <div className="directory-empty friend-error">{discoveryError}</div>}
+            {!discoveryLoading && !discoveryError && incomingFriendRequests.length === 0 && <div className="directory-empty">No pending friend requests.</div>}
+            {incomingFriendRequests.map((request) => (
+              <div className="friend-request-row" key={request.id}>
+                <Avatar person={{ name: request.senderName || 'New user', avatarId: request.senderAvatarId }} size="md" />
+                <span className="friend-request-copy"><strong>{request.senderName || 'New friend request'}</strong><small>@{request.senderUsername || request.senderId.slice(0, 8) + '…'}</small></span>
+                <button className="friend-action-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, true)}>Accept</button>
+                <button className="friend-decline-button" disabled={friendActionBusy === request.id} onClick={() => respondToFriendRequest(request, false)}>Reject</button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {view !== 'archive' && view !== 'starred' && (
           <div className="online-section">
