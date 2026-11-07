@@ -1,16 +1,31 @@
-# React + Vite
+# Notification
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A React + Vite messaging application. The existing monochrome chat interface is being connected to Firebase in staged, testable phases.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+    npm install
+    npm run dev
 
-## React Compiler
+## Firebase setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Follow docs/FIREBASE_SETUP.md to create the Firebase project, enable Authentication, Firestore, Realtime Database and Storage, and add the Web App config to an ignored .env.local file.
 
-## Expanding the Oxlint configuration
+Do not commit .env.local, service-account JSON files, or Admin SDK private keys.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Current implementation status
+
+- The current chat UI includes local prototype interactions and sample conversations.
+- Local browser state is not a shared backend and does not synchronize between accounts or devices.
+- Firebase rules in this repository are scaffolding; do not deploy them to production until they have been tightened and tested.
+- Voice/video calling and AI features are out of scope.
+- Shared images are always view-once by product design.
+- Message retention is fixed at 24 hours after the recipient first sees a message.
+- Message drafts and scheduled messages are excluded.
+
+## Project documentation
+
+- Firebase setup: docs/FIREBASE_SETUP.md
+- Product scope: docs/PRODUCT_SCOPE.md
+- Technical architecture: docs/TECHNICAL_ARCHITECTURE.md
+- View-once image security: docs/ONE_TIME_VIEW_SECURITY.md
