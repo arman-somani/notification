@@ -265,6 +265,64 @@ function BrandGlyph({ size = 20 }) {
   )
 }
 
+
+function VoiceMessagePlayer({ src, className = '' }) {
+  const audioRef = useRef(null)
+  const [playing, setPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return undefined
+    const updateTime = () => setCurrentTime(audio.currentTime || 0)
+    const updateDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0)
+    const onPlay = () => setPlaying(true)
+    const onPause = () => setPlaying(false)
+    const onEnded = () => { setPlaying(false); setCurrentTime(0); audio.currentTime = 0 }
+    audio.addEventListener('timeupdate', updateTime)
+    audio.addEventListener('loadedmetadata', updateDuration)
+    audio.addEventListener('durationchange', updateDuration)
+    audio.addEventListener('play', onPlay)
+    audio.addEventListener('pause', onPause)
+    audio.addEventListener('ended', onEnded)
+    updateDuration()
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime)
+      audio.removeEventListener('loadedmetadata', updateDuration)
+      audio.removeEventListener('durationchange', updateDuration)
+      audio.removeEventListener('play', onPlay)
+      audio.removeEventListener('pause', onPause)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [src])
+  const formatTime = (value) => {
+    const safe = Math.max(0, Math.floor(value || 0))
+    return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`
+  }
+  const togglePlayback = async () => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.paused) {
+      try { await audio.play() } catch { setPlaying(false) }
+    } else audio.pause()
+  }
+  const seek = (event) => {
+    const next = Number(event.target.value)
+    if (audioRef.current && Number.isFinite(next)) {
+      audioRef.current.currentTime = next
+      setCurrentTime(next)
+    }
+  }
+  return (
+    <div className={`custom-voice-player ${className}`}>
+      <audio ref={audioRef} src={src} preload="metadata" controls={false} controlsList="nodownload noplaybackrate" disablePictureInPicture onContextMenu={(event) => event.preventDefault()} />
+      <button type="button" className="voice-play-toggle" onClick={togglePlayback} aria-label={playing ? 'Pause voice message' : 'Play voice message'}>{playing ? 'Ⅱ' : '▶'}</button>
+      <input className="voice-progress" type="range" min="0" max={duration || 0} step="0.1" value={Math.min(currentTime, duration || 0)} onChange={seek} aria-label="Voice message position" />
+      <span className="voice-time">{formatTime(playing || currentTime ? currentTime : duration)}</span>
+    </div>
+  )
+}
+
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
@@ -988,7 +1046,7 @@ function App() {
                           </button>
                         )
                       ) : isAudioMessage(message) ? (
-                        message.mediaUrl ? <audio className="voice-message-player" controls controlsList="nodownload noplaybackrate" disablePictureInPicture onContextMenu={(event) => event.preventDefault()} src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
+                        message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
@@ -1047,7 +1105,7 @@ function App() {
                 {recordingPreview ? (
                   <div className="composer-voice-preview" aria-label="Voice message preview">
                     <span className="composer-voice-preview-label">Preview</span>
-                    <audio className="voice-preview-player" controls preload="metadata" src={recordingPreview.url} />
+                    <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
                     <span className="composer-voice-preview-duration">{Math.floor(recordingPreview.durationSeconds / 60)}:{String(recordingPreview.durationSeconds % 60).padStart(2, '0')}</span>
                     <button type="button" className="voice-discard-button" onClick={discardVoicePreview}>Discard</button>
                     <button type="button" className="voice-send-button" onClick={sendVoicePreview}><Icon name="send" size={14} /> Send</button>
