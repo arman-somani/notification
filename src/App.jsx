@@ -505,16 +505,34 @@ function App({ profile, onLogout }) {
       try {
         const uid = auth.currentUser.uid
         const usernameTerm = newChatSearch.trim().toLowerCase().replace(/^@/, '')
-        const [outgoingSnapshot, contactsSnapshot] = await Promise.all([
+        const [outgoingSnapshot, incomingAcceptedSnapshot, contactsSnapshot] = await Promise.all([
           getDocs(query(collection(db, 'friendRequests'), where('senderId', '==', uid))),
+          getDocs(query(collection(db, 'friendRequests'), where('recipientId', '==', uid), where('status', '==', 'accepted'))),
           getDocs(collection(db, 'users', uid, 'contacts')),
         ])
-        const outgoing = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter((item) => item.status === 'pending')
-        const contacts = await Promise.all(contactsSnapshot.docs.map(async (item) => {
-          const profileSnapshot = await getDoc(doc(db, 'users', item.id))
+        const outgoingRequests = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        const outgoing = outgoingRequests.filter((item) => item.status === 'pending')
+        // Repair contacts for friendships accepted before the reciprocal-contact rules were fixed.
+        const acceptedRequests = [
+          ...outgoingRequests.filter((item) => item.status === 'accepted'),
+          ...incomingAcceptedSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+        ]
+        const contactIds = new Set(contactsSnapshot.docs.map((item) => item.id))
+        await Promise.all(acceptedRequests.map(async (request) => {
+          const otherUid = request.senderId === uid ? request.recipientId : request.senderId
+          if (!otherUid || contactIds.has(otherUid)) return
+          await setDoc(doc(db, 'users', uid, 'contacts', otherUid), {
+            uid: otherUid,
+            requestId: request.id,
+            createdAt: serverTimestamp(),
+          })
+          contactIds.add(otherUid)
+        }))
+        const contacts = await Promise.all([...contactIds].map(async (contactUid) => {
+          const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
-          return { id: item.id, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+          return { id: contactUid, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
         if (usernameTerm.length >= 3) {
