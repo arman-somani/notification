@@ -20,3 +20,27 @@
 @media(max-width:760px){.lp-header{height:66px;padding:0 20px}.lp-menu-toggle{display:block}.lp-nav{position:absolute;top:66px;left:0;right:0;display:none;flex-direction:column;gap:0;padding:12px 20px 18px;border-bottom:1px solid #30352d;background:rgba(9,10,9,.97)}.lp-nav.open{display:flex}.lp-nav button{text-align:left;padding:13px 0}.lp-header-login{padding:9px 11px}.lp-header-login span{margin-left:7px}.lp-hero{grid-template-columns:1fr;min-height:0;padding:75px 22px 85px}.lp-hero-copy h1{font-size:clamp(72px,17vw,120px)}.lp-hero-copy>p{max-width:460px}.lp-hero-footnote{margin-top:38px}.lp-hero-art{min-height:390px;margin-top:22px}.lp-hero-orb{width:min(74vw,390px)}.lp-online-card{left:0;top:7%}.lp-unread-card{right:0;bottom:8%}.lp-scroll-cue{left:22px;bottom:24px}.lp-manifesto{min-height:520px;padding:80px 24px}.lp-manifesto-top>span:last-child{max-width:130px;text-align:right}.lp-manifesto h2{font-size:clamp(47px,10vw,70px);margin-top:65px}.lp-manifesto>p{margin-left:15%;max-width:360px}.lp-manifesto-stamp{right:7%;bottom:7%}.lp-demo-section,.lp-feature-section{padding:85px 22px}.lp-demo-heading{display:block;margin-bottom:32px}.lp-demo-heading h2,.lp-feature-heading h2{font-size:clamp(45px,10vw,67px)}.lp-demo-heading>p{margin-top:15px}.lp-demo-frame{padding:7px}.lp-demo-frame-top{font-size:6px}.lp-chat-window{grid-template-columns:34px minmax(115px,.7fr) minmax(180px,1.3fr);min-height:350px}.lp-chat-sidebar{gap:13px}.lp-chat-list{padding:13px 7px}.lp-chat-person{gap:5px;padding:8px 2px}.lp-person-avatar{width:22px;height:22px;flex-basis:22px}.lp-chat-person b{font-size:7px}.lp-chat-person small{font-size:6px}.lp-chat-person em{display:none}.lp-chat-main{padding:12px 9px}.lp-message{max-width:90%;font-size:8px;padding:9px}.lp-chat-compose{padding:6px}.lp-chat-compose input{font-size:8px}.lp-demo-caption{font-size:5px}.lp-feature-heading{display:block;margin-bottom:38px}.lp-feature-heading>p{margin-top:15px}.lp-feature-layout{grid-template-columns:1fr;gap:30px}.lp-feature-tab{padding:17px 3px}.lp-feature-detail{min-height:470px;padding:34px 42% 20px 0}.lp-feature-index{top:34px}.lp-feature-detail h3{font-size:clamp(33px,7vw,47px)}.lp-feature-visual{width:40%;top:45%}.lp-orbit-core{font-size:35px}.lp-privacy-section{grid-template-columns:1fr;gap:45px;padding:85px 22px}.lp-privacy-copy h2{font-size:clamp(54px,11vw,76px)}.lp-privacy-visual{min-height:340px}.lp-privacy-panel{padding:17px}.lp-privacy-orbit{right:-3%;top:-7%;width:110px}.lp-final-cta{min-height:520px;padding:85px 20px}.lp-final-cta h2{font-size:clamp(60px,13vw,85px)}.lp-cta-bottom{right:20px;left:20px;font-size:6px}.lp-footer{padding:20px;flex-wrap:wrap}.lp-footer>span{order:3;width:100%}}
 @media(max-width:430px){.lp-chat-window{grid-template-columns:29px 104px minmax(155px,1fr);min-height:330px}.lp-chat-sidebar{gap:10px}.lp-chat-list{padding:11px 5px}.lp-chat-person{gap:4px}.lp-person-avatar{width:19px;height:19px;flex-basis:19px;font-size:8px}.lp-chat-person b{font-size:6px}.lp-chat-person small{font-size:5px}.lp-chat-main{padding:10px 7px}.lp-chat-top b{font-size:8px}.lp-message{font-size:7px;padding:8px}.lp-feature-detail{padding-right:0;padding-bottom:235px;min-height:590px}.lp-feature-visual{width:185px;top:auto;bottom:8px;right:50%;transform:translateX(50%)}.lp-setting-row{gap:8px}.lp-setting-row button{min-width:83px;font-size:7px}.lp-setting-row b{font-size:9px}.lp-privacy-panel-head small{font-size:6px}}
 @media(prefers-reduced-motion:reduce){.landing-page.lp-dark{scroll-behavior:auto}.lp-reveal{opacity:1;transform:none;transition:none}.lp-hero-orb,.lp-floating-card,.lp-manifesto:after,.lp-cta-asterisk,.lp-scroll-cue i,.lp-typing>span{animation:none}.lp-button-primary,.lp-button-light{transition:none}}
+
+
+/* Center the landing experience in a framed 80% viewport with a 110% visual scale. */
+@media (min-width: 761px) {
+  .landing-page.lp-dark {
+    width: 72.7273vw;
+    height: 90.9091svh;
+    min-height: 90.9091svh;
+    margin: 0 auto;
+    zoom: 1.1;
+    border-left: 1px solid rgba(255,255,255,.08);
+    border-right: 1px solid rgba(255,255,255,.08);
+  }
+}
+@media (max-width: 760px) {
+  .landing-page.lp-dark {
+    width: 100%;
+    height: 100svh;
+    min-height: 100svh;
+    margin: 0;
+    zoom: 1;
+    border: 0;
+  }
+}
