@@ -14,6 +14,28 @@ const startingMessages = [
 ]
 function Brand(){return <a className="nx-brand" href="#nx-home" aria-label="Notification home"><span className="nx-brand-mark">n</span><span>notification<span className="nx-brand-period">.</span></span></a>}
 
+const liveMessages = [
+  {name:'Jamie Parker',avatar:'J',tone:'lime',text:'This made me think of you ✨',time:'now'},
+  {name:'Mia Chen',avatar:'M',tone:'lilac',text:'Everyone is in! See you soon 💚',time:'just now'},
+  {name:'Olivia Rhye',avatar:'O',tone:'peach',text:'Sending you a little voice note…',time:'1m ago'},
+  {name:'Noah Williams',avatar:'N',tone:'blue',text:'That photo is everything 😂',time:'2m ago'},
+]
+function LiveMessageStack(){
+  const [active,setActive]=useState(0)
+  useEffect(()=>{const timer=window.setInterval(()=>setActive(value=>(value+1)%liveMessages.length),3200);return()=>window.clearInterval(timer)},[])
+  const message=liveMessages[active]
+  return <div className="nx-live-stack" aria-live="polite" aria-atomic="true">
+    <div className="nx-live-stack-label"><span className="nx-live-pulse"/> MESSAGES COMING IN <b>LIVE</b></div>
+    <div className="nx-live-card" key={active}>
+      <span className={'nx-live-avatar '+message.tone}>{message.avatar}<i/></span>
+      <span className="nx-live-copy"><b>{message.name}</b><span>{message.text}</span></span>
+      <span className="nx-live-time">{message.time}</span>
+    </div>
+    <div className="nx-live-typing"><span><i/><i/><i/></span> Someone else is typing…</div>
+    <div className="nx-live-reactions"><span>💚</span><span>✨</span><span>😂</span><small>little moments, arriving all day</small></div>
+  </div>
+}
+
 function ProductPreview({onStart}){
   const [mode,setMode]=useState('direct'),[draft,setDraft]=useState(''),[messages,setMessages]=useState(startingMessages),[liked,setLiked]=useState(true),[playing,setPlaying]=useState(false)
   const inputRef=useRef(null)
@@ -56,7 +78,7 @@ export default function LandingPage({onGetStarted}){
     <div className="nx-progress" ref={progressRef}/>
     <header className="nx-header"><Brand/><nav className={menuOpen?'nx-nav open':'nx-nav'}><button onClick={()=>goTo('nx-features')}>Why Notification</button><button onClick={()=>goTo('nx-preview')}>The experience</button><button onClick={()=>goTo('nx-privacy')}>Your privacy</button></nav><div className="nx-header-actions"><button className="nx-signin" onClick={onGetStarted}>Sign in <span>↗</span></button><button className="nx-mobile-menu" onClick={()=>setMenuOpen(!menuOpen)} aria-label="Toggle navigation">{menuOpen?'×':'☰'}</button></div></header>
     <section className="nx-hero" id="nx-hero"><div className="nx-hero-copy nx-reveal"><div className="nx-kicker"><span/> A LITTLE CLOSER, EVERY DAY</div><h1>Good chats.<br/><em>Great</em> people<span className="nx-heading-period">.</span></h1><p>Your people are your favorite part of life. Give every message, voice note, and shared moment a place that feels like yours.</p><div className="nx-hero-actions"><button className="nx-primary" onClick={onGetStarted}>Find your people <span>↗</span></button><button className="nx-watch" onClick={()=>goTo('nx-preview')}><span>▶</span> Take a quick look</button></div><div className="nx-social-proof"><div className="nx-avatar-stack"><i>J</i><i>M</i><i>A</i><i>+</i></div><span><b>Made for your circle.</b><small>Private chats · Group moments · Real connection</small></span></div></div>
-      <div className="nx-hero-visual nx-reveal"><div className="nx-visual-sun"/><div className="nx-visual-orbit orbit-a"/><div className="nx-visual-orbit orbit-b"/><div className="nx-hero-sticker"><span>✳</span> your kind of space</div><div className="nx-hero-note"><span className="nx-note-icon">♫</span><span><b>A voice note for you</b><small>0:08 · from Jamie</small></span><span className="nx-note-play">▶</span></div><div className="nx-hero-message"><span className="nx-message-avatar">J</span><span><small>JAMIE · JUST NOW</small><b>“This made me think of you.”</b></span><span className="nx-message-heart">♥</span></div><div className="nx-visual-caption">A PLACE FOR THE EVERYDAY MAGIC <span>✳</span></div></div>
+      <div className="nx-hero-visual nx-reveal"><div className="nx-visual-sun"/><LiveMessageStack/><div className="nx-visual-orbit orbit-a"/><div className="nx-visual-orbit orbit-b"/><div className="nx-hero-sticker"><span>✳</span> your kind of space</div><div className="nx-hero-note"><span className="nx-note-icon">♫</span><span><b>A voice note for you</b><small>0:08 · from Jamie</small></span><span className="nx-note-play">▶</span></div><div className="nx-hero-message"><span className="nx-message-avatar">J</span><span><small>JAMIE · JUST NOW</small><b>“This made me think of you.”</b></span><span className="nx-message-heart">♥</span></div><div className="nx-visual-caption">A PLACE FOR THE EVERYDAY MAGIC <span>✳</span></div></div>
       <button className="nx-scroll-cue" onClick={()=>goTo('nx-intro')}>SCROLL TO FEEL THE DIFFERENCE <span>↓</span></button>
     </section>
     <section className="nx-intro nx-reveal" id="nx-intro"><span className="nx-section-label">A BETTER KIND OF INBOX</span><h2>Less scrolling.<br/><em>More belonging.</em></h2><p>Not another noisy feed. Just a thoughtful home for the people you actually want to hear from.</p><div className="nx-intro-mark">n<span>.</span></div></section>
