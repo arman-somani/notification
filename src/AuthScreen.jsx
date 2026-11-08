@@ -19,7 +19,7 @@ const explainAuthError = (error) => {
   }
 }
 
-export default function AuthScreen({ user, initialError = '', onProfileSaved }) {
+export default function AuthScreen({ user, initialError = '', onProfileSaved, onBack }) {
   const [mode, setMode] = useState(user ? 'profile' : 'signin')
   const [email, setEmail] = useState(user?.email || '')
   const [password, setPassword] = useState('')
@@ -108,6 +108,7 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved }) 
   return (
     <main className="auth-page">
       <section className="auth-card">
+        {onBack && <button className="auth-back-button" type="button" onClick={onBack}>← Back to home</button>}
         <div className="auth-brand"><span className="auth-brand-mark">N</span><span>notification<span>.</span></span></div>
         <p className="auth-eyebrow">{profileSetup ? 'ONE LAST STEP' : 'YOUR PRIVATE SPACE'}</p>
         <h1>{profileSetup ? 'Create your profile' : isRegister ? 'Create your account' : 'Welcome back'}</h1>
