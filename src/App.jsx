@@ -505,30 +505,22 @@ function App({ profile, onLogout }) {
       try {
         const uid = auth.currentUser.uid
         const usernameTerm = newChatSearch.trim().toLowerCase().replace(/^@/, '')
-        const [outgoingSnapshot, incomingAcceptedSnapshot, contactsSnapshot] = await Promise.all([
+        const [outgoingSnapshot, incomingAcceptedSnapshot] = await Promise.all([
           getDocs(query(collection(db, 'friendRequests'), where('senderId', '==', uid))),
           getDocs(query(collection(db, 'friendRequests'), where('recipientId', '==', uid), where('status', '==', 'accepted'))),
-          getDocs(collection(db, 'users', uid, 'contacts')),
         ])
         const outgoingRequests = outgoingSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
         const outgoing = outgoingRequests.filter((item) => item.status === 'pending')
-        // Repair contacts for friendships accepted before the reciprocal-contact rules were fixed.
+        // Accepted friend requests are the source of truth for the friend list.
+        // This avoids relying on reciprocal contact documents being created by both clients.
         const acceptedRequests = [
           ...outgoingRequests.filter((item) => item.status === 'accepted'),
           ...incomingAcceptedSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
         ]
-        const contactIds = new Set(contactsSnapshot.docs.map((item) => item.id))
-        await Promise.all(acceptedRequests.map(async (request) => {
-          const otherUid = request.senderId === uid ? request.recipientId : request.senderId
-          if (!otherUid || contactIds.has(otherUid)) return
-          await setDoc(doc(db, 'users', uid, 'contacts', otherUid), {
-            uid: otherUid,
-            requestId: request.id,
-            createdAt: serverTimestamp(),
-          })
-          contactIds.add(otherUid)
-        }))
-        const contacts = await Promise.all([...contactIds].map(async (contactUid) => {
+        const contactIds = [...new Set(acceptedRequests.map((request) =>
+          request.senderId === uid ? request.recipientId : request.senderId
+        ).filter(Boolean))]
+        const contacts = await Promise.all(contactIds.map(async (contactUid) => {
           const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
@@ -1082,11 +1074,6 @@ function App({ profile, onLogout }) {
           throw new Error('This friend request is no longer available.')
         }
         transaction.update(requestRef, { status: accept ? 'accepted' : 'rejected', respondedAt: serverTimestamp() })
-        if (accept) {
-          const senderId = snapshot.data().senderId
-          transaction.set(doc(db, 'users', uid, 'contacts', senderId), { uid: senderId, requestId: request.id, createdAt: serverTimestamp() })
-          transaction.set(doc(db, 'users', senderId, 'contacts', uid), { uid, requestId: request.id, createdAt: serverTimestamp() })
-        }
       })
       setIncomingFriendRequests((items) => items.filter((item) => item.id !== request.id))
       if (accept) {
@@ -1720,7 +1707,7 @@ function App({ profile, onLogout }) {
                 <div className="friend-section-heading">YOUR FRIENDS <span>{friendContacts.length}</span></div>
                 <div className="directory-list">
                   {friendContacts.map((person) => (
-                    <button className="directory-person" key={person.id} onClick={() => { startConversation(person); showToast('Friend added. Chat syncing is the next backend step.') }}>
+                    <button className="directory-person" key={person.id} onClick={() => { startConversation(person) }}>
                       <Avatar person={person} size="lg" />
                       <span><strong>{person.name}</strong><small>@{person.username}</small></span>
                       <Icon name="arrowLeft" size={16} className="directory-arrow" />
