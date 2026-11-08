@@ -1,183 +1,69 @@
 import { useEffect, useRef, useState } from 'react'
 import './LandingPage.css'
 
-const featureTabs = [
-  { id: 'private', label: 'Private chats', eyebrow: 'ONE TO ONE', title: 'A conversation that feels personal.', copy: 'Pick up where you left off. Share messages, reply in context, and know when your words have reached the other side.', points: ['Read receipts', 'Reply to any message', 'Online presence'], stat: '01 / 06' },
-  { id: 'groups', label: 'Group spaces', eyebrow: 'TOGETHER, BETTER', title: 'Your whole circle. One space.', copy: 'Bring people together around the conversations, plans, and little moments you share.', points: ['Group conversations', 'Member controls', 'Leave whenever you need'], stat: '02 / 06' },
-  { id: 'voice', label: 'Voice messages', eyebrow: 'SAY IT YOUR WAY', title: 'Some things sound better out loud.', copy: 'Hold to record, preview your voice message, then send when it sounds just right.', points: ['Hold to record', 'Listen before sending', 'Live recording waveform'], stat: '03 / 06' },
-  { id: 'reactions', label: 'Reactions & replies', eyebrow: 'MORE THAN WORDS', title: 'Make every message feel heard.', copy: 'React with expressive emojis or reply to the exact message you mean. Keep the conversation flowing.', points: ['Message reactions', 'Threaded context', 'Expressive emoji choices'], stat: '04 / 06' },
-  { id: 'presence', label: 'Online & read status', eyebrow: 'IN THE MOMENT', title: 'Know when they are around.', copy: 'See who is online, spot typing indicators, and follow message delivery and read status.', points: ['Live online indicator', 'Typing feedback', 'Delivered and read states'], stat: '05 / 06' },
-  { id: 'privacy', label: 'Privacy controls', eyebrow: 'YOUR SPACE, YOUR RULES', title: 'Stay in control of your space.', copy: 'Choose how people can reach you, see your activity, and add you to groups.', points: ['Who can message you', 'Last-seen visibility', 'Group invitation controls'], stat: '06 / 06' },
+const features = [
+  { n:'01', icon:'↗', title:'Private by nature', tag:'PRIVATE CHATS', tone:'mint', copy:'One-to-one conversations with read states, replies, and the little details that make a chat feel personal.' },
+  { n:'02', icon:'◉', title:'Your people, together', tag:'GROUP SPACES', tone:'lilac', copy:'Bring your circle into one place. Create groups, share moments, and keep every plan moving.' },
+  { n:'03', icon:'♫', title:'Hear the feeling', tag:'VOICE NOTES', tone:'peach', copy:'Hold to record, preview before sending, and let your voice say what a text cannot.' },
+  { n:'04', icon:'✳', title:'A little more human', tag:'LIVE MOMENTS', tone:'yellow', copy:'React, reply, and see when someone is around. Conversations should feel alive.' },
 ]
-
-const demoMessages = [
-  { from: 'them', text: 'The new space is looking good. What do you think?' },
-  { from: 'you', text: 'Love how everything is in one place. ✨' },
-  { from: 'them', text: 'Same here. Sending the voice note now.' },
+const startingMessages = [
+  {from:'them',text:'Are we still on for this weekend?'},
+  {from:'you',text:'Absolutely. I’ll make a group for everyone ✨'},
+  {from:'them',text:'Perfect — this is going to be fun!'},
 ]
+function Brand(){return <a className="nx-brand" href="#nx-home" aria-label="Notification home"><span className="nx-brand-mark">n</span><span>notification<span className="nx-brand-period">.</span></span></a>}
 
-function Brand() {
-  return <a className="landing-brand" href="#top" aria-label="Notification home"><span className="landing-brand-mark" aria-hidden="true">N</span><span>otification<span>.</span></span></a>
-}
-
-function Arrow({ children = '↗' }) {
-  return <span aria-hidden="true">{children}</span>
-}
-
-function ChatWindow({ activeTab, setActiveTab }) {
-  const [draft, setDraft] = useState('')
-  const [messages, setMessages] = useState(demoMessages)
-  const [reaction, setReaction] = useState('❤️')
-  const inputRef = useRef(null)
-
-  const sendMessage = (event) => {
-    event.preventDefault()
-    const clean = draft.trim()
-    if (!clean) return
-    setMessages((current) => [...current, { from: 'you', text: clean }].slice(-5))
-    setDraft('')
-    inputRef.current?.focus()
-  }
-
-  return (
-    <div className="lp-chat-window">
-      <div className="lp-chat-sidebar">
-        <div className="lp-mini-logo">N</div>
-        <span className="lp-side-active">▤</span><span>◎</span><span>♧</span><span className="lp-side-settings">⚙</span>
-      </div>
-      <div className="lp-chat-list">
-        <div className="lp-chat-list-title">Messages <span>＋</span></div>
-        <div className="lp-chat-search">⌕ &nbsp; Search conversations</div>
-        <small className="lp-chat-label">PINNED</small>
-        <button className={activeTab === 'private' ? 'lp-chat-person selected' : 'lp-chat-person'} onClick={() => setActiveTab('private')}><i className="lp-person-avatar ava-a">A</i><span><b>Alex Morgan</b><small>That sounds perfect!</small></span><em>10:42</em></button>
-        <button className={activeTab === 'groups' ? 'lp-chat-person selected' : 'lp-chat-person'} onClick={() => setActiveTab('groups')}><i className="lp-person-avatar ava-b">S</i><span><b>Studio Circle</b><small>Mia: Added the files</small></span><em>10:18</em></button>
-        <small className="lp-chat-label">RECENT</small>
-        <button className="lp-chat-person" onClick={() => setActiveTab('private')}><i className="lp-person-avatar ava-c">O</i><span><b>Olivia Rhye</b><small>See you tomorrow ✨</small></span><em>Yesterday</em></button>
-        <button className="lp-chat-person" onClick={() => setActiveTab('private')}><i className="lp-person-avatar ava-d">N</i><span><b>Noah Williams</b><small>Sent you the notes</small></span><em>Tue</em></button>
-      </div>
-      <div className="lp-chat-main">
-        <div className="lp-chat-top"><i className="lp-person-avatar ava-a">{activeTab === 'groups' ? 'S' : 'A'}</i><span><b>{activeTab === 'groups' ? 'Studio Circle' : 'Alex Morgan'}</b><small><i></i>{activeTab === 'groups' ? '5 members' : 'Online now'}</small></span><div className="lp-chat-tools"><button aria-label="Search">⌕</button><button aria-label="More options">···</button></div></div>
-        <div className="lp-chat-date">TODAY · 10:30 AM</div>
-        <div className="lp-message-stack">
-          {messages.map((message, index) => <div className={'lp-message ' + message.from} key={index}>{message.text}{index === 1 && <button className="lp-reaction-chip" onClick={() => setReaction(reaction === '❤️' ? '✨' : '❤️')} aria-label="Change reaction">{reaction} <small>1</small></button>}</div>)}
-        </div>
-        <div className="lp-typing"><span></span><span></span><span></span><small>Alex is typing</small></div>
-        <form className="lp-chat-compose" onSubmit={sendMessage}><button type="button" aria-label="Add attachment">＋</button><input ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Write a message..." aria-label="Demo message" /><button className="lp-send" type="submit" aria-label="Send demo message"><Arrow>↑</Arrow></button></form>
-        <div className="lp-demo-caption">INTERACTIVE PREVIEW · TRY SENDING A MESSAGE</div>
-      </div>
+function ProductPreview({onStart}){
+  const [mode,setMode]=useState('direct'),[draft,setDraft]=useState(''),[messages,setMessages]=useState(startingMessages),[liked,setLiked]=useState(true),[playing,setPlaying]=useState(false)
+  const inputRef=useRef(null)
+  const send=(e)=>{e.preventDefault();const value=draft.trim();if(!value)return;setMessages(items=>[...items,{from:'you',text:value}].slice(-4));setDraft('');inputRef.current?.focus()}
+  return <div className="nx-product-shell">
+    <div className="nx-product-topbar"><div className="nx-window-dots"><i/><i/><i/></div><span>YOUR SPACE <b>•</b> LIVE PREVIEW</span><button onClick={onStart}>Open your space <span>↗</span></button></div>
+    <div className="nx-product-ui">
+      <aside className="nx-rail"><div className="nx-rail-logo">n</div><button className="active" aria-label="Messages">▤</button><button aria-label="Contacts">♧</button><button aria-label="Groups">◉</button><button className="nx-rail-bottom" aria-label="Settings">⚙</button><div className="nx-rail-avatar">A</div></aside>
+      <aside className="nx-inbox"><div className="nx-inbox-heading"><div><small>GOOD AFTERNOON</small><h3>Your inbox<span>.</span></h3></div><button aria-label="New conversation">＋</button></div>
+        <div className="nx-search"><span>⌕</span> Search messages</div><div className="nx-inbox-label">PINNED <span>•••</span></div>
+        <button className={mode==='direct'?'nx-thread selected':'nx-thread'} onClick={()=>setMode('direct')}><span className="nx-avatar avatar-lime">J</span><span className="nx-thread-copy"><b>Jamie Parker</b><small>That sounds perfect!</small></span><time>Now</time><i className="nx-unread-dot"/></button>
+        <button className={mode==='group'?'nx-thread selected':'nx-thread'} onClick={()=>setMode('group')}><span className="nx-avatar avatar-lilac">✳</span><span className="nx-thread-copy"><b>Weekend people</b><small>Mia: sent the details</small></span><time>2m</time></button>
+        <div className="nx-inbox-label">RECENT</div><button className="nx-thread" onClick={()=>setMode('direct')}><span className="nx-avatar avatar-peach">O</span><span className="nx-thread-copy"><b>Olivia Rhye</b><small>See you tomorrow ☀️</small></span><time>1h</time></button><button className="nx-thread" onClick={()=>setMode('direct')}><span className="nx-avatar avatar-blue">N</span><span className="nx-thread-copy"><b>Noah Williams</b><small>Voice message</small></span><time>3h</time></button><div className="nx-inbox-footer"><span className="nx-online-indicator"/> 3 friends online</div>
+      </aside>
+      <section className="nx-conversation"><header className="nx-conversation-head"><span className={mode==='group'?'nx-avatar avatar-lilac':'nx-avatar avatar-lime'}>{mode==='group'?'✳':'J'}</span><div><b>{mode==='group'?'Weekend people':'Jamie Parker'}</b><small><i/> {mode==='group'?'6 members · 3 online':'Online now'}</small></div><div className="nx-conversation-actions"><button aria-label="Search chat">⌕</button><button aria-label="More options">···</button></div></header>
+        <div className="nx-day-divider"><span/> TODAY, 10:42 AM <span/></div><div className="nx-chat-messages">{messages.map((m,i)=><div key={i} className={'nx-bubble '+m.from}><span>{m.text}</span>{i===1&&<button className="nx-message-reaction" onClick={()=>setLiked(!liked)}>{liked?'💚':'✨'} <small>1</small></button>}</div>)}</div>
+        <div className="nx-typing"><span><i/><i/><i/></span> Jamie is typing</div><div className="nx-voice-preview"><button onClick={()=>setPlaying(!playing)} aria-label={playing?'Pause voice preview':'Play voice preview'}>{playing?'Ⅱ':'▶'}</button><div className={playing?'nx-wave playing':'nx-wave'}>{Array.from({length:26},(_,i)=><i key={i} style={{height:(8+(i*13)%19)+'px'}}/>)}</div><small>{playing?'Playing':'0:08'}</small></div>
+        <form className="nx-compose" onSubmit={send}><button type="button" aria-label="Add attachment">＋</button><input ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write something lovely..." aria-label="Try sending a message"/><button type="button" className="nx-emoji" onClick={()=>setDraft(v=>v+' ✨')} aria-label="Add sparkle">☺</button><button className="nx-send" type="submit" aria-label="Send message">↑</button></form><div className="nx-preview-hint">A TINY PREVIEW — TRY SENDING A MESSAGE</div>
+      </section>
     </div>
-  )
+  </div>
 }
 
-function FeatureShowcase({ activeFeature, setActiveFeature }) {
-  const active = featureTabs.find((item) => item.id === activeFeature) || featureTabs[0]
-  return (
-    <section className="lp-feature-section" id="features">
-      <div className="lp-feature-heading lp-reveal"><div><span className="lp-eyebrow">MADE FOR EVERY KIND OF CONVERSATION</span><h2>Thoughtful details.<br/><em>Everyday magic.</em></h2></div><p>Everything you need to stay close, designed to stay out of your way.</p></div>
-      <div className="lp-feature-layout">
-        <div className="lp-feature-tabs lp-reveal" role="tablist" aria-label="Notification features">
-          {featureTabs.map((feature) => <button key={feature.id} role="tab" aria-selected={activeFeature === feature.id} className={activeFeature === feature.id ? 'lp-feature-tab active' : 'lp-feature-tab'} onClick={() => setActiveFeature(feature.id)}><span>{feature.stat}</span><b>{feature.label}</b><Arrow /></button>)}
-        </div>
-        <div className="lp-feature-detail lp-reveal" role="tabpanel" key={active.id}>
-          <span className="lp-eyebrow">{active.eyebrow}</span><span className="lp-feature-index">{active.stat}</span>
-          <h3>{active.title}</h3><p>{active.copy}</p>
-          <ul>{active.points.map((point) => <li key={point}><span>↗</span>{point}</li>)}</ul>
-          <div className="lp-feature-visual" aria-hidden="true"><div className="lp-orbit orbit-one"></div><div className="lp-orbit orbit-two"></div><div className="lp-orbit-core">N</div><div className="lp-orbit-float float-one">✦</div><div className="lp-orbit-float float-two">•••</div><div className="lp-orbit-float float-three">↗</div></div>
-        </div>
-      </div>
+export default function LandingPage({onGetStarted}){
+  const [menuOpen,setMenuOpen]=useState(false),[activeFeature,setActiveFeature]=useState(0)
+  const [privacy,setPrivacy]=useState({messages:'Contacts',lastSeen:'Nobody',groups:'Contacts'})
+  const rootRef=useRef(null),progressRef=useRef(null)
+  useEffect(()=>{
+    const root=rootRef.current;if(!root)return undefined
+    const nodes=root.querySelectorAll('.nx-reveal')
+    const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('visible');observer.unobserve(entry.target)}}),{root,threshold:.12})
+    nodes.forEach(node=>observer.observe(node))
+    const onScroll=()=>{const max=root.scrollHeight-root.clientHeight;if(progressRef.current)progressRef.current.style.transform='scaleX('+(max>0?root.scrollTop/max:0)+')'}
+    root.addEventListener('scroll',onScroll,{passive:true});onScroll()
+    return()=>{observer.disconnect();root.removeEventListener('scroll',onScroll)}
+  },[])
+  const goTo=id=>{rootRef.current?.querySelector('#'+id)?.scrollIntoView({behavior:'smooth',block:'start'});setMenuOpen(false)}
+  const cycle=(key,values)=>setPrivacy(current=>{const i=values.indexOf(current[key]);return {...current,[key]:values[(i+1)%values.length]}})
+  return <main className="nx-page" id="nx-home" ref={rootRef}>
+    <div className="nx-progress" ref={progressRef}/>
+    <header className="nx-header"><Brand/><nav className={menuOpen?'nx-nav open':'nx-nav'}><button onClick={()=>goTo('nx-features')}>Why Notification</button><button onClick={()=>goTo('nx-preview')}>The experience</button><button onClick={()=>goTo('nx-privacy')}>Your privacy</button></nav><div className="nx-header-actions"><button className="nx-signin" onClick={onGetStarted}>Sign in <span>↗</span></button><button className="nx-mobile-menu" onClick={()=>setMenuOpen(!menuOpen)} aria-label="Toggle navigation">{menuOpen?'×':'☰'}</button></div></header>
+    <section className="nx-hero" id="nx-hero"><div className="nx-hero-copy nx-reveal"><div className="nx-kicker"><span/> A LITTLE CLOSER, EVERY DAY</div><h1>Good chats.<br/><em>Great</em> people<span className="nx-heading-period">.</span></h1><p>Your people are your favorite part of life. Give every message, voice note, and shared moment a place that feels like yours.</p><div className="nx-hero-actions"><button className="nx-primary" onClick={onGetStarted}>Find your people <span>↗</span></button><button className="nx-watch" onClick={()=>goTo('nx-preview')}><span>▶</span> Take a quick look</button></div><div className="nx-social-proof"><div className="nx-avatar-stack"><i>J</i><i>M</i><i>A</i><i>+</i></div><span><b>Made for your circle.</b><small>Private chats · Group moments · Real connection</small></span></div></div>
+      <div className="nx-hero-visual nx-reveal"><div className="nx-visual-sun"/><div className="nx-visual-orbit orbit-a"/><div className="nx-visual-orbit orbit-b"/><div className="nx-hero-sticker"><span>✳</span> your kind of space</div><div className="nx-hero-note"><span className="nx-note-icon">♫</span><span><b>A voice note for you</b><small>0:08 · from Jamie</small></span><span className="nx-note-play">▶</span></div><div className="nx-hero-message"><span className="nx-message-avatar">J</span><span><small>JAMIE · JUST NOW</small><b>“This made me think of you.”</b></span><span className="nx-message-heart">♥</span></div><div className="nx-visual-caption">A PLACE FOR THE EVERYDAY MAGIC <span>✳</span></div></div>
+      <button className="nx-scroll-cue" onClick={()=>goTo('nx-intro')}>SCROLL TO FEEL THE DIFFERENCE <span>↓</span></button>
     </section>
-  )
-}
-
-export default function LandingPage({ onGetStarted }) {
-  const [activeFeature, setActiveFeature] = useState('private')
-  const [activeDemo, setActiveDemo] = useState('private')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const scrollRef = useRef(null)
-  const progressRef = useRef(null)
-
-  useEffect(() => {
-    const root = scrollRef.current
-    if (!root) return undefined
-    const nodes = root.querySelectorAll('.lp-reveal')
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible')
-          observer.unobserve(entry.target)
-        }
-      })
-    }, { root, threshold: 0.12 })
-    nodes.forEach((node) => observer.observe(node))
-    const updateProgress = () => {
-      const max = root.scrollHeight - root.clientHeight
-      const progress = max > 0 ? root.scrollTop / max : 0
-      if (progressRef.current) progressRef.current.style.transform = 'scaleX(' + progress + ')'
-      root.style.setProperty('--lp-scroll', String(progress))
-    }
-    root.addEventListener('scroll', updateProgress, { passive: true })
-    updateProgress()
-    return () => {
-      observer.disconnect()
-      root.removeEventListener('scroll', updateProgress)
-    }
-  }, [])
-
-  const jumpTo = (id) => {
-    scrollRef.current?.querySelector('#' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    setMenuOpen(false)
-  }
-
-  return (
-    <main className="landing-page lp-dark" id="top" ref={scrollRef}>
-      <div className="lp-scroll-progress" ref={progressRef}></div>
-      <header className="landing-header lp-header">
-        <Brand />
-        <nav className={menuOpen ? 'lp-nav open' : 'lp-nav'}><button onClick={() => jumpTo('features')}>Features</button><button onClick={() => jumpTo('experience')}>Experience</button><button onClick={() => jumpTo('privacy')}>Privacy</button></nav>
-        <div className="lp-header-actions"><button className="lp-header-login" onClick={onGetStarted}>Sign in <Arrow /></button><button className="lp-menu-toggle" onClick={() => setMenuOpen((open) => !open)} aria-label="Toggle navigation">{menuOpen ? '×' : '☰'}</button></div>
-      </header>
-
-      <section className="lp-hero" id="hero">
-        <div className="lp-hero-copy lp-reveal">
-          <span className="lp-eyebrow"><i></i> A MORE HUMAN WAY TO MESSAGE</span>
-          <h1>Closer,<br/>even when<br/><em>apart.</em></h1>
-          <p>Life happens between messages. Notification brings your people, your groups, and every little moment into one thoughtful space.</p>
-          <div className="lp-hero-actions"><button className="lp-button-primary" onClick={onGetStarted}>Start a conversation <Arrow /></button><button className="lp-button-text" onClick={() => jumpTo('experience')}>Explore the experience <span>↓</span></button></div>
-          <div className="lp-hero-footnote"><span className="lp-live-dot"></span> PRIVATE CONVERSATIONS · REAL CONNECTIONS</div>
-        </div>
-        <div className="lp-hero-art lp-reveal">
-          <div className="lp-art-grid"></div><div className="lp-art-glow"></div>
-          <div className="lp-floating-card lp-online-card"><span className="lp-live-dot"></span><span><b>Alex Morgan</b><small>Online now</small></span><span className="lp-online-pulse"></span></div>
-          <div className="lp-floating-card lp-unread-card"><span className="lp-unread-icon">✳</span><span><b>New message</b><small>You have a moment waiting.</small></span><strong>01</strong></div>
-          <div className="lp-hero-orb"><div className="lp-orb-ring ring-a"></div><div className="lp-orb-ring ring-b"></div><div className="lp-orb-ring ring-c"></div><div className="lp-orb-core"><span>N</span><i></i></div><div className="lp-orb-caption">YOUR WORLD<br/>IN ONE PLACE</div></div>
-          <div className="lp-art-bottom-label"><span>01 / 06</span><span>CONNECTION, IN MOTION</span></div>
-        </div>
-        <button className="lp-scroll-cue" onClick={() => jumpTo('experience')}><span>SCROLL TO EXPLORE</span><i>↓</i></button>
-      </section>
-
-      <section className="lp-manifesto lp-reveal" id="experience">
-        <div className="lp-manifesto-top"><span className="lp-eyebrow">NOT JUST ANOTHER INBOX</span><span>BUILT AROUND PEOPLE, NOT PINGS</span></div>
-        <h2>The best conversations<br/>don't need <em>more noise.</em></h2>
-        <p>They need room to happen. A quick hello, a group plan, a voice note you had to send — it all belongs here.</p>
-        <div className="lp-manifesto-stamp">LESS NOISE<br/><i>✳</i><br/>MORE YOU</div>
-      </section>
-
-      <section className="lp-demo-section">
-        <div className="lp-demo-heading lp-reveal"><span className="lp-eyebrow">TAKE A CLOSER LOOK</span><h2>Your conversations,<br/><em>in their element.</em></h2><p>A little preview of what staying connected can feel like.</p></div>
-        <div className="lp-demo-tabs lp-reveal"><button className={activeDemo === 'private' ? 'active' : ''} onClick={() => setActiveDemo('private')}>01 &nbsp; One-to-one</button><button className={activeDemo === 'groups' ? 'active' : ''} onClick={() => setActiveDemo('groups')}>02 &nbsp; Groups</button></div>
-        <div className="lp-demo-frame lp-reveal"><div className="lp-demo-frame-top"><span>NOTIFICATION / LIVE PREVIEW</span><span><i></i> INTERACTIVE DEMO</span></div><ChatWindow activeTab={activeDemo} setActiveTab={setActiveDemo}/></div>
-      </section>
-
-      <FeatureShowcase activeFeature={activeFeature} setActiveFeature={setActiveFeature}/>
-
-      <section className="lp-privacy-section" id="privacy">
-        <div className="lp-privacy-copy lp-reveal"><span className="lp-eyebrow">YOUR SPACE, YOUR RULES</span><h2>Connection<br/>without giving<br/><em>up control.</em></h2><p>Choose who can message you, who sees your last active time, and who can add you to groups. Your space should feel like yours.</p><button className="lp-button-outline" onClick={onGetStarted}>Make it yours <Arrow /></button></div>
-        <div className="lp-privacy-visual lp-reveal"><div className="lp-privacy-panel"><div className="lp-privacy-panel-head"><span>◈</span><b>Privacy settings</b><small>YOUR ACCOUNT</small></div><div className="lp-setting-row"><span><b>Who can message me</b><small>Control who can start a chat</small></span><button onClick={(e) => e.currentTarget.textContent = e.currentTarget.textContent === 'Everyone' ? 'Contacts' : 'Everyone'}>Everyone <span>⌄</span></button></div><div className="lp-setting-row"><span><b>Last seen</b><small>Choose who sees your activity</small></span><button onClick={(e) => e.currentTarget.textContent = e.currentTarget.textContent === 'Contacts' ? 'Nobody' : 'Contacts'}>Contacts <span>⌄</span></button></div><div className="lp-setting-row"><span><b>Group invites</b><small>Decide who can add you</small></span><button onClick={(e) => e.currentTarget.textContent = e.currentTarget.textContent === 'Contacts' ? 'Everyone' : 'Contacts'}>Contacts <span>⌄</span></button></div><div className="lp-privacy-panel-foot"><span className="lp-live-dot"></span> Your preferences, your call.</div></div><div className="lp-privacy-orbit">N</div></div>
-      </section>
-
-      <section className="lp-final-cta lp-reveal" id="join"><div className="lp-cta-asterisk">✳</div><span className="lp-eyebrow">YOUR PEOPLE ARE ONE MESSAGE AWAY</span><h2>Make space for<br/><em>what matters.</em></h2><p>Start with a hello. See where the conversation goes.</p><button className="lp-button-light" onClick={onGetStarted}>Join Notification <Arrow /></button><div className="lp-cta-bottom"><span>NOTIFICATION © {new Date().getFullYear()}</span><span>MADE FOR THE MOMENTS IN BETWEEN.</span></div></section>
-
-      <footer className="landing-footer lp-footer"><Brand/><span>A quieter place for your conversations.</span><button onClick={() => jumpTo('hero')}>Back to top ↑</button></footer>
-    </main>
-  )
+    <section className="nx-intro nx-reveal" id="nx-intro"><span className="nx-section-label">A BETTER KIND OF INBOX</span><h2>Less scrolling.<br/><em>More belonging.</em></h2><p>Not another noisy feed. Just a thoughtful home for the people you actually want to hear from.</p><div className="nx-intro-mark">n<span>.</span></div></section>
+    <section className="nx-preview-section" id="nx-preview"><div className="nx-section-heading nx-reveal"><div><span className="nx-section-label">COME ON IN</span><h2>Feels familiar.<br/><em>Works beautifully.</em></h2></div><p>Explore a little. Switch conversations, play a voice note, or send a message right here.</p></div><div className="nx-preview-wrap nx-reveal"><ProductPreview onStart={onGetStarted}/></div><div className="nx-preview-foot"><span>01 — YOUR INBOX, REIMAGINED</span><span>INTERACTIVE PRODUCT PREVIEW ↗</span></div></section>
+    <section className="nx-features-section" id="nx-features"><div className="nx-section-heading nx-reveal"><div><span className="nx-section-label">THE GOOD STUFF</span><h2>Small details.<br/><em>Big feelings.</em></h2></div><p>Everything you need to stay close, without getting in the way of the moment.</p></div><div className="nx-feature-grid">{features.map((f,i)=><button key={f.n} className={'nx-feature-card '+f.tone+(activeFeature===i?' chosen':'')} onClick={()=>setActiveFeature(i)}><div className="nx-feature-card-top"><span>{f.n} / 04</span><span className="nx-feature-icon">{f.icon}</span></div><div><small>{f.tag}</small><h3>{f.title}</h3><p>{f.copy}</p></div><div className="nx-feature-card-bottom"><span>{activeFeature===i?'YOU’RE HERE':'EXPLORE THIS'}</span><b>↗</b></div></button>)}</div><div className="nx-feature-selected nx-reveal"><span>YOUR PICK</span><b>{features[activeFeature].title}</b><p>{features[activeFeature].copy}</p><span className="nx-selected-progress"><i style={{width:((activeFeature+1)/features.length*100)+'%'}}/></span></div></section>
+    <section className="nx-privacy-section" id="nx-privacy"><div className="nx-privacy-copy nx-reveal"><span className="nx-section-label">COMFORT IS A FEATURE</span><h2>Your space.<br/><em>Your say.</em></h2><p>Choose who can reach you, who sees your activity, and who gets to add you to a group. Your boundaries belong in the design.</p><button className="nx-outline" onClick={onGetStarted}>Make it yours <span>↗</span></button></div><div className="nx-settings-card nx-reveal"><div className="nx-settings-head"><span className="nx-settings-symbol">⌘</span><div><b>Your privacy</b><small>A FEW WAYS TO MAKE IT YOURS</small></div><span className="nx-settings-lock">✳</span></div><div className="nx-setting"><div><b>Who can message me</b><small>Choose who can start a conversation</small></div><button onClick={()=>cycle('messages',['Everyone','Contacts','Nobody'])}>{privacy.messages}<span>⌄</span></button></div><div className="nx-setting"><div><b>Last seen</b><small>Keep your activity on your terms</small></div><button onClick={()=>cycle('lastSeen',['Everyone','Contacts','Nobody'])}>{privacy.lastSeen}<span>⌄</span></button></div><div className="nx-setting"><div><b>Group invitations</b><small>Decide who can add you to groups</small></div><button onClick={()=>cycle('groups',['Everyone','Contacts','Nobody'])}>{privacy.groups}<span>⌄</span></button></div><div className="nx-settings-foot"><span/> Your choices. Your comfort. Always.</div></div></section>
+    <section className="nx-cta nx-reveal"><div className="nx-cta-spark">✳</div><span className="nx-section-label">YOUR PEOPLE ARE RIGHT THERE</span><h2>Start with<br/><em>a hello.</em></h2><p>The little moments deserve a lovely place to land.</p><button className="nx-primary nx-primary-dark" onClick={onGetStarted}>Get started — it’s free <span>↗</span></button><div className="nx-cta-bottom"><span>NOTIFICATION © {new Date().getFullYear()}</span><span>MADE FOR THE PEOPLE WHO MATTER.</span></div></section>
+    <footer className="nx-footer"><Brand/><span>A little more human, one message at a time.</span><button onClick={()=>goTo('nx-home')}>Back to top ↑</button></footer>
+  </main>
 }
