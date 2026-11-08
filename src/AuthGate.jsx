@@ -3,9 +3,11 @@ import { doc, getDoc } from 'firebase/firestore'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth, db, firebaseReady, missingFirebaseConfig } from './firebase/client'
 import AuthScreen from './AuthScreen'
+import LandingPage from './LandingPage'
 import ChatApp from './App'
 
 export default function AuthGate() {
+  const [showAuth, setShowAuth] = useState(false)
   const [session, setSession] = useState({ loading: true, user: null, profile: null, error: '' })
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function AuthGate() {
   }
 
   if (!firebaseReady) {
+    if (!showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />;
     return (
       <main className="auth-page">
         <section className="auth-card">
@@ -68,7 +71,8 @@ export default function AuthGate() {
   }
 
   if (!session.user || !session.profile) {
-    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} />
+    if (!session.user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />
+    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={() => setShowAuth(false)} />
   }
 
   return <ChatApp profile={session.profile} onLogout={() => signOut(auth)} />
