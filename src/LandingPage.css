@@ -41,3 +41,25 @@
 @keyframes nx-reaction-pop{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-5px) rotate(-7deg)}}
 @media(max-width:760px){.nx-live-stack{top:43%;width:88%}.nx-live-card{min-height:68px;padding:10px 12px}.nx-live-copy>span{font-size:8px}.nx-live-reactions{margin-top:12px}}
 @media(prefers-reduced-motion:reduce){.nx-live-pulse,.nx-live-typing i,.nx-live-reactions>span{animation:none}.nx-live-card{animation:none}}
+
+
+/* Privacy copy presented as an incoming chat bubble */
+.nx-privacy-copy{min-width:0}
+.nx-privacy-message-bubble{position:relative;max-width:520px;padding:25px 27px 20px;border:1px solid rgba(226,241,211,.16);border-radius:22px 22px 22px 5px;background:linear-gradient(145deg,#2d3b26,#263321);box-shadow:0 24px 65px rgba(0,0,0,.2);animation:nx-chat-pop .8s cubic-bezier(.16,1,.3,1) both}
+.nx-privacy-message-bubble:before{content:'';position:absolute;left:-1px;bottom:-10px;width:20px;height:20px;background:#263321;clip-path:polygon(0 0,100% 0,0 100%)}
+.nx-privacy-message-meta{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding-bottom:15px;border-bottom:1px solid rgba(226,241,211,.13)}
+.nx-privacy-message-avatar{width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:#c9f36c;color:#26351d;font:800 21px 'Manrope';transform:rotate(-6deg)}
+.nx-privacy-message-meta>span:nth-child(2){display:grid;gap:4px}
+.nx-privacy-message-meta b{color:#eff5e8;font-size:8px;letter-spacing:1.3px}
+.nx-privacy-message-meta small{color:#a9b99d;font-size:7px;letter-spacing:1px}
+.nx-privacy-message-meta time{margin-left:auto;color:#9eae92;font-size:8px}
+.nx-privacy-message-bubble>.nx-section-label{color:#c9f36c;font-size:8px}
+.nx-privacy-message-bubble h2{margin:18px 0 15px;color:#f4f6ee;font:800 clamp(46px,5.2vw,69px)/.98 'Manrope';letter-spacing:-.08em}
+.nx-privacy-message-bubble h2 em{color:#c9f36c;font-style:normal}
+.nx-privacy-message-bubble>p{max-width:390px;margin:0;color:#c1cbb9;font-size:11px;line-height:1.9}
+.nx-privacy-message-cta{margin-top:22px;min-height:43px;padding:0 16px;display:inline-flex;align-items:center;gap:25px;border:0;border-radius:999px;background:#c9f36c;color:#26351d;font-size:9px;font-weight:800;box-shadow:0 4px 0 #8eae52;transition:transform .2s,box-shadow .2s}
+.nx-privacy-message-cta:hover{transform:translateY(-3px);box-shadow:0 7px 0 #8eae52}
+.nx-message-read-state{display:block;margin-top:17px;color:#9eae92;text-align:right;font-size:7px;letter-spacing:.5px}
+@keyframes nx-chat-pop{0%{opacity:0;transform:translate(24px,22px) scale(.94);filter:blur(5px)}70%{opacity:1;transform:translate(-3px,-2px) scale(1.01);filter:blur(0)}100%{opacity:1;transform:translate(0) scale(1)}}
+@media(max-width:760px){.nx-privacy-message-bubble{max-width:none;padding:22px 20px 18px}.nx-privacy-message-bubble h2{font-size:clamp(45px,10vw,64px)}}
+@media(prefers-reduced-motion:reduce){.nx-privacy-message-bubble{animation:none}.nx-privacy-message-cta{transition:none}}
