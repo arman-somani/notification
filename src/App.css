@@ -1413,3 +1413,22 @@
 @media (max-width: 390px) {
   .chat-header-actions .icon-button:nth-child(2) { display: inline-grid; }
 }
+
+
+/* Keep every authenticated app view centered in the same 80% desktop frame.
+   The smaller layout box compensates for the requested 110% visual zoom. */
+@media (min-width: 761px) {
+  .app-shell {
+    width: 72.7273vw;
+    max-width: 1527px;
+    height: min(854px, calc((100svh - 44px) / 1.1));
+    min-height: 0;
+    zoom: 1.1;
+  }
+}
+@media (max-width: 760px) {
+  .app-shell {
+    width: 100%;
+    zoom: 1;
+  }
+}
