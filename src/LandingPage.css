@@ -22,30 +22,6 @@
 @media(prefers-reduced-motion:reduce){.landing-page.lp-dark{scroll-behavior:auto}.lp-reveal{opacity:1;transform:none;transition:none}.lp-hero-orb,.lp-floating-card,.lp-manifesto:after,.lp-cta-asterisk,.lp-scroll-cue i,.lp-typing>span{animation:none}.lp-button-primary,.lp-button-light{transition:none}}
 
 
-/* Center the landing experience in a framed 80% viewport with a 110% visual scale. */
-@media (min-width: 761px) {
-  .landing-page.lp-dark {
-    width: 72.7273vw;
-    height: 90.9091svh;
-    min-height: 90.9091svh;
-    margin: 0 auto;
-    zoom: 1.1;
-    border-left: 1px solid rgba(255,255,255,.08);
-    border-right: 1px solid rgba(255,255,255,.08);
-  }
-}
-@media (max-width: 760px) {
-  .landing-page.lp-dark {
-    width: 100%;
-    height: 100svh;
-    min-height: 100svh;
-    margin: 0;
-    zoom: 1;
-    border: 0;
-  }
-}
-
-
 /* Header alignment: keep the brand, navigation and sign-in action on one clean row. */
 .lp-header {
   display: flex;
