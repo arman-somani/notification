@@ -17,7 +17,7 @@ const demoMessages = [
 ]
 
 function Brand() {
-  return <a className="landing-brand" href="#top" aria-label="Notification home"><span className="landing-brand-mark">N</span><span>notification<span>.</span></span></a>
+  return <a className="landing-brand" href="#top" aria-label="Notification home"><span className="landing-brand-mark" aria-hidden="true">N</span><span>otification<span>.</span></span></a>
 }
 
 function Arrow({ children = '↗' }) {
