@@ -72,7 +72,7 @@ export default function AuthGate() {
 
   if (!session.user || !session.profile) {
     if (!session.user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />
-    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={() => setShowAuth(false)} />
+    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => setShowAuth(false) : undefined} />
   }
 
   return <ChatApp profile={session.profile} onLogout={() => signOut(auth)} />
