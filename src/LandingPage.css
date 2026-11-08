@@ -44,3 +44,29 @@
     border: 0;
   }
 }
+
+
+/* Header alignment: keep the brand, navigation and sign-in action on one clean row. */
+.lp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+}
+.lp-header .lp-nav {
+  flex: 1 1 auto;
+  justify-content: center;
+  align-items: center;
+  white-space: nowrap;
+}
+.lp-header .lp-header-actions {
+  flex: 0 0 auto;
+}
+@media (max-width: 760px) {
+  .lp-header .lp-nav {
+    align-items: stretch;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+}
