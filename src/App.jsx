@@ -359,7 +359,7 @@ function VoiceMessagePlayer({ src, className = '' }) {
 
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
 
-function App({ profile, onLogout }) {
+function App({ profile }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
     // Authenticated accounts must never see sample conversations or another
@@ -1268,7 +1268,7 @@ function App({ profile, onLogout }) {
               <strong>{profileName}</strong>
               <span>Available</span>
               <span className="profile-avatar-lock"><Icon name="shield" size={13} /> Preset profile avatar</span>
-              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>{onLogout && <button onClick={onLogout}><Icon name="logout" size={14} /> Sign out</button>}
+              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button><button onClick={handleLogout} disabled={loggingOut}><Icon name="logout" size={14} /> {loggingOut ? 'Signing out…' : 'Sign out'}</button>
             </div>
           )}
         </div>
