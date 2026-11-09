@@ -679,26 +679,51 @@ function App({ profile }) {
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     if (!uid || !db || friendContacts.length === 0) return undefined
+
     const unsubscribers = friendContacts.map((person) => {
       const conversationId = directConversationId(uid, person.id)
-      return onSnapshot(doc(db, 'conversations', conversationId), (snapshot) => {
-        if (!snapshot.exists()) return
-        const data = snapshot.data()
-        const lastMessageAt = data.lastMessageAt?.toDate ? data.lastMessageAt.toDate() : null
+      const latestMessageQuery = query(
+        collection(db, 'conversations', conversationId, 'messages'),
+        orderBy('createdAt', 'desc'),
+        limit(1),
+      )
+
+      return onSnapshot(latestMessageQuery, (snapshot) => {
+        const latest = snapshot.docs[0]
+        if (!latest) {
+          setConversations((items) => items.map((item) => item.id === person.id
+            ? { ...item, firebaseConversationId: conversationId }
+            : item))
+          return
+        }
+
+        const data = latest.data()
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : null
+        const preview = data.type === 'image'
+          ? 'Photo'
+          : data.type === 'voice'
+            ? 'Voice message'
+            : data.text || 'Message'
+
         setConversations((items) => items.map((item) => item.id === person.id ? {
           ...item,
           firebaseConversationId: conversationId,
-          preview: data.lastMessagePreview || item.preview || 'Start a conversation',
-          time: lastMessageAt ? lastMessageAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
-          lastActivityAt: lastMessageAt ? lastMessageAt.getTime() : item.lastActivityAt || 0,
-          unread: activeId === person.id || data.lastMessageSenderId === uid
+          preview,
+          time: createdAt ? createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
+          lastActivityAt: createdAt ? createdAt.getTime() : item.lastActivityAt || 0,
+          unread: activeId === person.id || data.senderId === uid
             ? 0
-            : data.lastMessageSenderId ? Math.max(1, item.unread || 0) : item.unread,
+            : Math.max(1, item.unread || 0),
         } : item))
       }, (error) => {
-        if (error?.code !== 'permission-denied') showToast(error?.message || 'Could not update the inbox.')
+        if (error?.code === 'permission-denied') {
+          showToast('Firestore denied inbox message reads. Check conversation membership and deploy the latest firestore.rules.')
+        } else {
+          showToast(error?.message || 'Could not update the inbox.')
+        }
       })
     })
+
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [friendContacts, activeId, auth?.currentUser?.uid])
 
@@ -859,22 +884,10 @@ function App({ profile }) {
         return
       }
 
-      // The message is already saved. An inbox preview failure must not report the
-      // message as failed or put the already-sent text back into the composer.
+      // Inbox preview and latest-activity ordering are derived from the message
+      // subcollection listener. No second write to the conversation document is needed.
       setReplyTarget(null)
       messageInputRef.current?.focus()
-      try {
-        await setDoc(doc(db, 'conversations', conversationId), {
-          lastMessageAt: serverTimestamp(),
-          lastMessagePreview: text.slice(0, 160),
-          lastMessageSenderId: uid,
-          updatedAt: serverTimestamp(),
-        }, { merge: true })
-      } catch (error) {
-        showToast(error?.code === 'permission-denied'
-          ? 'Message sent. Firestore denied the inbox preview update; deploy the latest firestore.rules.'
-          : 'Message sent, but the inbox preview could not be updated: ' + (error?.message || 'unknown error'))
-      }
       return
     }
 
@@ -888,7 +901,7 @@ function App({ profile }) {
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
-  const getMediaApiUrl = () => String(import.meta.env.VITE_NOTIFICATION_API_URL || '').replace(/\/+$/, '')
+  const getMediaApiUrl = () => String(import.meta.env.VITE_NOTIFICATION_API_URL || 'https://notification-api.mediatoolkit.workers.dev').trim().replace(/\/+$/, '')
 
   const openSharedImage = async (message) => {
     const apiUrl = getMediaApiUrl()
@@ -968,9 +981,20 @@ function App({ profile }) {
 
     const uid = auth?.currentUser?.uid
     const apiUrl = getMediaApiUrl()
-    const isAcceptedFriend = uid && db && apiUrl && friendContacts.some((person) => person.id === activeId)
-    if (!isAcceptedFriend) {
-      showToast('Image sharing requires a signed-in account, the media Worker URL, and an accepted friend conversation.')
+    if (!uid) {
+      showToast('Sign in again before sharing an image.')
+      return
+    }
+    if (!db) {
+      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
+      return
+    }
+    if (!friendContacts.some((person) => person.id === activeId)) {
+      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
+      return
+    }
+    if (!apiUrl) {
+      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
       return
     }
 
@@ -1029,18 +1053,8 @@ function App({ profile }) {
         }
         : item))
       setReplyTarget(null)
-      let previewUpdated = true
-      try {
-        await setDoc(doc(db, 'conversations', conversationId), {
-          lastMessageAt: serverTimestamp(),
-          lastMessagePreview: 'Photo',
-          lastMessageSenderId: uid,
-          updatedAt: serverTimestamp(),
-        }, { merge: true })
-      } catch {
-        previewUpdated = false
-      }
-      showToast(previewUpdated ? 'Photo sent.' : 'Photo sent, but the inbox preview could not be updated.')
+      // The inbox listener reads the newest message directly, including photos.
+      showToast('Photo sent.')
     } catch (error) {
       showToast(error?.message || 'Could not send the image. Please try again.')
     }
