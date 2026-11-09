@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { signOut } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { auth, db, storage } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 
@@ -596,7 +597,7 @@ function App({ profile }) {
     try {
       const safeConversations = conversations.map((conversation) => ({
         ...conversation,
-        messages: conversation.messages.map(({ imageData, mediaUrl, ...message }) => message),
+        messages: conversation.messages.map(({ imageData, imageUrl, mediaUrl, ...message }) => message),
       }))
       localStorage.setItem('notification-conversations', JSON.stringify(safeConversations))
     } catch { showToast('Local storage is full. Some recent changes may not persist.') }
@@ -635,30 +636,53 @@ function App({ profile }) {
       orderBy('createdAt', 'asc'),
       limit(300),
     )
-    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-      const messages = snapshot.docs.map((messageDoc) => {
-        const data = messageDoc.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-        return {
-          id: messageDoc.id,
-          from: data.senderId === uid ? 'me' : 'them',
-          senderId: data.senderId,
-          type: data.type || 'text',
-          text: data.text || '',
-          replyToId: data.replyToId,
-          replyToText: data.replyToText,
-          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
-          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-          status: data.senderId === uid ? 'sent' : 'received',
-        }
-      })
-      setConversations((items) => {
-        const exists = items.some((item) => item.id === activeId)
-        if (!exists) return items
-        return items.map((item) => item.id === activeId
-          ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1]?.text || 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
-          : item)
-      })
+    let snapshotGeneration = 0
+    const unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+      const generation = ++snapshotGeneration
+      try {
+        const messages = await Promise.all(snapshot.docs.map(async (messageDoc) => {
+          const data = messageDoc.data()
+          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+          let imageUrl = ''
+          if (data.type === 'image' && data.attachmentPath && storage) {
+            try {
+              imageUrl = await getDownloadURL(storageRef(storage, data.attachmentPath))
+            } catch {
+              imageUrl = ''
+            }
+          }
+          return {
+            id: messageDoc.id,
+            from: data.senderId === uid ? 'me' : 'them',
+            senderId: data.senderId,
+            type: data.type || 'text',
+            text: data.text || '',
+            attachmentPath: data.attachmentPath || '',
+            imageUrl,
+            viewOnce: data.viewOnce === true,
+            viewed: data.senderId !== uid && data.viewedByUid === uid,
+            replyToId: data.replyToId,
+            replyToText: data.replyToText,
+            editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
+            time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            status: data.senderId === uid ? 'sent' : 'received',
+          }
+        }))
+        if (generation !== snapshotGeneration) return
+        const latestMessage = messages[messages.length - 1]
+        const preview = latestMessage
+          ? latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
+          : 'Start a conversation'
+        setConversations((items) => {
+          const exists = items.some((item) => item.id === activeId)
+          if (!exists) return items
+          return items.map((item) => item.id === activeId
+            ? { ...item, firebaseConversationId: conversationId, messages, preview, time: latestMessage?.time || item.time }
+            : item)
+        })
+      } catch (error) {
+        showToast(error?.message || 'Could not load shared images.')
+      }
     }, (error) => {
       setToast(error?.code === 'permission-denied'
         ? 'Message sync permission denied. Deploy the latest Firestore rules.'
@@ -869,19 +893,108 @@ function App({ profile }) {
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
-  const handleFile = (event) => {
-    const file = event.target.files?.[0]
+  const handleFile = async (event) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
     if (!file || !activeConversation) return
-    event.target.value = ''
-    if (!file.type.startsWith('image/')) { showToast('Only image sharing is available here'); return }
-    if (file.size > 3 * 1024 * 1024) { showToast('Choose an image smaller than 3 MB'); return }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: true, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'View-once image', time: 'Now', lastActivityAt: Date.now() } : item))
+    input.value = ''
+
+    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+      showToast('Choose a JPG, PNG, WEBP or GIF image.')
+      return
     }
-    reader.onerror = () => showToast('Could not read that image')
-    reader.readAsDataURL(file)
+    if (file.size > 3 * 1024 * 1024) {
+      showToast('Choose an image smaller than 3 MB.')
+      return
+    }
+
+    const uid = auth?.currentUser?.uid
+    const isAcceptedFriend = uid && db && storage && friendContacts.some((person) => person.id === activeId)
+    if (!isAcceptedFriend) {
+      showToast('Image sharing requires a signed-in account and an accepted friend conversation.')
+      return
+    }
+
+    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+    const safeExtension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'jpg'
+    const imageRef = storageRef(storage, `conversations/${conversationId}/images/${messageRef.id}/image.${safeExtension}`)
+
+    try {
+      // Ensure both participants are members before allowing an attachment upload.
+      await runTransaction(db, async (transaction) => {
+        const conversationRef = doc(db, 'conversations', conversationId)
+        const snapshot = await transaction.get(conversationRef)
+        if (!snapshot.exists()) {
+          transaction.set(conversationRef, {
+            createdBy: uid,
+            memberIds: [uid, activeId].sort(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+          throw new Error('This conversation does not have the expected members.')
+        }
+      })
+
+      await uploadBytes(imageRef, file, {
+        contentType: file.type,
+        customMetadata: { senderId: uid },
+      })
+
+      await setDoc(messageRef, {
+        senderId: uid,
+        type: 'image',
+        attachmentPath: imageRef.fullPath,
+        viewOnce: true,
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+      })
+
+      try {
+        await setDoc(doc(db, 'conversations', conversationId), {
+          lastMessageAt: serverTimestamp(),
+          lastMessagePreview: 'Photo',
+          lastMessageSenderId: uid,
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      } catch {
+        showToast('Image sent, but the inbox preview could not be updated.')
+      }
+
+      const imageUrl = await getDownloadURL(imageRef)
+      const localMessage = {
+        id: messageRef.id,
+        from: 'me',
+        senderId: uid,
+        type: 'image',
+        attachmentPath: imageRef.fullPath,
+        imageUrl,
+        viewOnce: true,
+        viewed: false,
+        time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        status: 'sent',
+      }
+      setConversations((items) => items.map((item) => item.id === activeId
+        ? {
+          ...item,
+          firebaseConversationId: conversationId,
+          messages: item.messages.some((message) => message.id === localMessage.id)
+            ? item.messages
+            : [...item.messages, localMessage],
+          preview: 'Photo',
+          time: 'Now',
+          lastActivityAt: Date.now(),
+        }
+        : item))
+      setReplyTarget(null)
+      showToast('Image sent.')
+    } catch (error) {
+      const message = error?.code === 'storage/unauthorized' || error?.code === 'permission-denied'
+        ? 'Firebase denied this image. Deploy the updated Firestore and Storage rules.'
+        : error?.message || 'Could not send the image. Please try again.'
+      showToast(message)
+    }
   }
 
   const stopVoiceWaveform = () => {
@@ -1500,33 +1613,48 @@ function App({ profile }) {
                           message.senderViewed ? (
                             <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>You opened this image · unavailable</span></div>
                           ) : (
-                            <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
-                              if (!message.imageData || message.senderViewed) return
-                              setViewOnceImage({ id: message.id, src: message.imageData, senderView: true })
+                            <button type="button" className="image-message image-view-once image-locked" disabled={!(message.imageData || message.imageUrl)} onClick={() => {
+                              const imageSource = message.imageData || message.imageUrl
+                              if (!imageSource || message.senderViewed) return
+                              setViewOnceImage({ id: message.id, src: imageSource, senderView: true })
                               setConversations((items) => items.map((item) => item.id === activeId ? {
                                 ...item,
                                 messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, senderViewed: true, senderOpenedAt: Date.now() } : entry),
                               } : item))
                             }}>
                               <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                              <strong>{message.imageData ? 'Your sent image' : 'Image unavailable'}</strong>
-                              <small>{message.imageData ? 'Open once · you cannot reopen it after closing' : 'Image bytes are not stored in this browser preview'}</small>
+                              <strong>{message.imageData || message.imageUrl ? 'Your sent image' : 'Image unavailable'}</strong>
+                              <small>{message.imageData || message.imageUrl ? 'Open once · you cannot reopen it after closing' : 'Shared image could not be loaded'}</small>
                             </button>
                           )
                         ) : message.viewed ? (
                           <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>Opened · image unavailable</span></div>
                         ) : (
-                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
-                            if (!message.imageData || message.viewed) return
-                            setViewOnceImage({ id: message.id, src: message.imageData })
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!(message.imageData || message.imageUrl) || message.viewed} onClick={async () => {
+                            const imageSource = message.imageData || message.imageUrl
+                            if (!imageSource || message.viewed) return
+                            const uid = auth?.currentUser?.uid
+                            if (uid && db && message.attachmentPath) {
+                              try {
+                                const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+                                await updateDoc(doc(db, 'conversations', conversationId, 'messages', message.id), {
+                                  viewedByUid: uid,
+                                  viewedAt: serverTimestamp(),
+                                })
+                              } catch (error) {
+                                showToast(error?.message || 'Could not open this shared image.')
+                                return
+                              }
+                            }
+                            setViewOnceImage({ id: message.id, src: imageSource })
                             setConversations((items) => items.map((item) => item.id === activeId ? {
                               ...item,
-                              messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, openedAt: Date.now() } : entry),
+                              messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, imageData: null, imageUrl: null, openedAt: Date.now() } : entry),
                             } : item))
                           }}>
                             <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                            <strong>{message.imageData ? 'Image waiting for you' : 'Image unavailable in this preview'}</strong>
-                            <small>{message.imageData ? 'Open once · it cannot be reopened after closing' : 'Image bytes are not stored in this browser preview'}</small>
+                            <strong>{message.imageData || message.imageUrl ? 'Image waiting for you' : 'Image unavailable'}</strong>
+                            <small>{message.imageData || message.imageUrl ? 'Open once · it cannot be reopened after closing' : message.attachmentPath ? 'Could not load shared image. Refresh and try again.' : 'Image file is unavailable'}</small>
                           </button>
                         )
                       ) : isAudioMessage(message) ? (
@@ -1697,7 +1825,7 @@ function App({ profile }) {
       {viewOnceImage && (
         <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
           const openedId = viewOnceImage.id
-          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null, imageUrl: null, viewed: true } : message) } : item))
           setViewOnceImage(null)
         } }}>
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
