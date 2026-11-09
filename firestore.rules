@@ -170,9 +170,24 @@ service cloud.firestore {
             'forwardedFrom', 'mentionIds'
           ]);
         allow update: if isConversationMember(conversationId)
-          && resource.data.senderId == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['text', 'editedAt', 'deletedAt']);
+          && (
+            (
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['text', 'editedAt', 'deletedAt'])
+            )
+            ||
+            (
+              resource.data.type == 'image'
+              && resource.data.viewOnce == true
+              && resource.data.senderId != request.auth.uid
+              && !('viewedByUid' in resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['viewedByUid', 'viewedAt'])
+              && request.resource.data.viewedByUid == request.auth.uid
+              && request.resource.data.viewedAt is timestamp
+            )
+          );
         allow delete: if false;
       }
 
