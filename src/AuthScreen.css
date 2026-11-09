@@ -93,3 +93,19 @@
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 0 0 17px; color: #92928d; font-size: 9px; font-weight: 800; letter-spacing: 1.1px; }
 .auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: #e6e6e2; }
 :root[data-theme="dark"] .auth-divider::before, :root[data-theme="dark"] .auth-divider::after { background: #393937; }
+
+.auth-avatar-step { display:grid; gap:15px; }
+.auth-gender-options { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.auth-gender-options button { min-height:42px; border:1px solid #dededb; border-radius:9px; background:#fafaf9; color:inherit; font:inherit; font-weight:700; cursor:pointer; }
+.auth-gender-options button.selected { border-color:#171717; background:#f0f0ed; box-shadow:inset 0 0 0 1px #171717; }
+.auth-avatar-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.auth-avatar-grid button { min-width:0; display:grid; justify-items:center; gap:4px; padding:9px 3px; border:1px solid #e4e4e1; border-radius:10px; background:transparent; color:inherit; cursor:pointer; }
+.auth-avatar-grid button.selected { border-color:#171717; background:#f2f2ef; box-shadow:inset 0 0 0 1px #171717; }
+.auth-avatar-grid strong { font-size:9px; text-align:center; }
+.auth-avatar-grid small { color:#888; font-size:8px; }
+.auth-avatar-preview { width:38px; height:38px; display:grid; place-items:center; border-radius:50%; background:#d8d8d3; color:#343431; font-size:24px; }
+.auth-avatar-female { background:#e1d6dc; color:#604653; }
+.auth-back-step { justify-self:start; border:0; padding:0; background:transparent; color:#777; font:inherit; font-size:11px; cursor:pointer; }
+:root[data-theme="dark"] .auth-gender-options button, :root[data-theme="dark"] .auth-avatar-grid button { background:#20201f; border-color:#393937; color:#f1f1ef; }
+:root[data-theme="dark"] .auth-gender-options button.selected, :root[data-theme="dark"] .auth-avatar-grid button.selected { border-color:#f1f1ef; background:#30302e; }
+@media(max-width:390px) { .auth-avatar-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
