@@ -1081,7 +1081,7 @@ function App({ profile, isAdmin = false }) {
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
-    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : (message) => Boolean(message && (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || message.mediaUrl || message.audioUrl || message.mimeType?.startsWith('audio/')))(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
@@ -1548,7 +1548,7 @@ function App({ profile, isAdmin = false }) {
                             <small>{message.attachmentPath ? 'Open once · it cannot be reopened after closing' : 'Image file is unavailable'}</small>
                           </button>
                         )
-                      ) : (message) => Boolean(message && (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || message.mediaUrl || message.audioUrl || message.mimeType?.startsWith('audio/')))(message) ? (
+                      ) : (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) ? (
                         message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
@@ -1561,7 +1561,7 @@ function App({ profile, isAdmin = false }) {
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
                       <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
-                      {!(message) => Boolean(message && (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || message.mediaUrl || message.audioUrl || message.mimeType?.startsWith('audio/')))(message) && <>
+                      {!(message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
                         <button type="button" onClick={() => beginReply(message)}>Reply</button>
@@ -1579,7 +1579,7 @@ function App({ profile, isAdmin = false }) {
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
                       </div>}
                       </>}
-                      {!(message) => Boolean(message && (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || message.mediaUrl || message.audioUrl || message.mimeType?.startsWith('audio/')))(message) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
+                      {!(message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
@@ -1706,6 +1706,7 @@ function App({ profile, isAdmin = false }) {
           {activeConversation.status === 'group' && <div className="details-block group-management-block"><span className="section-label">GROUP MEMBERS · {(activeConversation.memberIds || []).length}</span>
             {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, moderators: (item.moderators || []).includes(memberId) ? (item.moderators || []).filter((id) => id !== memberId) : [...(item.moderators || []), memberId] } : item))}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
             {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberId = event.target.value; if (memberId) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, memberIds: [...new Set([...(item.memberIds || []), memberId])], members: (new Set([...(item.memberIds || []), memberId])).size + ' members' } : item)) }}><option value="" disabled>Add a member…</option>{directory.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
+          </div>
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
       )}
