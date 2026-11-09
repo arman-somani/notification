@@ -990,9 +990,13 @@ function App({ profile }) {
       setReplyTarget(null)
       showToast('Image sent.')
     } catch (error) {
-      const message = error?.code === 'storage/unauthorized' || error?.code === 'permission-denied'
-        ? 'Firebase denied this image. Deploy the updated Firestore and Storage rules.'
-        : error?.message || 'Could not send the image. Please try again.'
+      const details = String(error?.message || '')
+      const billingBlocked = /billing|Spark pricing|402|403/i.test(details)
+      const message = billingBlocked
+        ? 'Firebase Storage is unavailable for this project. Check its billing plan and Storage bucket.'
+        : error?.code === 'storage/unauthorized' || error?.code === 'permission-denied'
+          ? 'Firebase denied this image. Deploy the updated Firestore and Storage rules.'
+          : details || 'Could not send the image. Please try again.'
       showToast(message)
     }
   }
