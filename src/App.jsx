@@ -242,6 +242,7 @@ const iconPaths = {
   chevron: <path d="m7 10 5 5 5-5" />,
   arrowLeft: <><path d="m15 18-6-6 6-6" /><path d="M9 12h12" /></>,
   close: <><path d="m18 6-12 12M6 6l12 12" /></>,
+  trash: <><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 11v5m4-5v5" /></>,
   image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></>,
   file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6M8 13h8m-8 4h8" /></>,
   edit: <><path d="m16 4 4 4L8 20l-5 1 1-5Z" /><path d="m14 6 4 4" /></>,
@@ -392,6 +393,7 @@ function App({ profile, isAdmin = false }) {
   const [newChatSearch, setNewChatSearch] = useState('')
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
+  const [deletedChatIds, setDeletedChatIds] = useState([])
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
   const [friendRequestError, setFriendRequestError] = useState('')
   const [showFriendRequests, setShowFriendRequests] = useState(false)
@@ -461,6 +463,19 @@ function App({ profile, isAdmin = false }) {
     window.addEventListener('notification-profile-updated', syncProfile)
     return () => window.removeEventListener('notification-profile-updated', syncProfile)
   }, [])
+
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) {
+      setDeletedChatIds([])
+      return undefined
+    }
+    return onSnapshot(collection(db, 'users', uid, 'inbox'), (snapshot) => {
+      setDeletedChatIds(snapshot.docs.filter((entry) => entry.data().hidden === true).map((entry) => entry.id))
+    }, (error) => {
+      showToast(error?.message || 'Could not sync hidden chats.')
+    })
+  }, [auth?.currentUser?.uid])
 
   useEffect(() => {
     const uid = auth?.currentUser?.uid
@@ -659,7 +674,7 @@ function App({ profile, isAdmin = false }) {
   ], [conversations, friendContacts])
 
   const visibleConversations = useMemo(() => {
-    let items = conversations
+    let items = conversations.filter((item) => !deletedChatIds.includes(item.firebaseConversationId || (item.status === 'group' ? item.id : directConversationId(auth?.currentUser?.uid || '', item.id)))
     if (view === 'starred') items = items.filter((item) => item.favorite && !item.archived)
     else if (view === 'archive') items = items.filter((item) => item.archived)
     else if (view === 'contacts') items = directory
@@ -669,7 +684,7 @@ function App({ profile, isAdmin = false }) {
     const query = search.trim().toLowerCase()
     if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
     return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
-  }, [conversations, directory, listFilter, search, view])
+  }, [conversations, deletedChatIds, directory, listFilter, search, view])
 
   const showToast = (message) => {
     setToast(message)
@@ -1203,6 +1218,34 @@ function App({ profile, isAdmin = false }) {
     showToast(activeConversation.archived ? 'Conversation restored' : 'Conversation archived')
   }
 
+  const deleteChat = async () => {
+    if (!activeConversation) return
+    const chatName = activeConversation.name || 'this chat'
+    if (!window.confirm('Delete this chat from your inbox? This only removes it for you. The other person will keep their messages.')) return
+    const uid = auth?.currentUser?.uid
+    const conversationId = activeConversation.firebaseConversationId || (
+      uid && activeConversation.status !== 'group' ? directConversationId(uid, activeConversation.id) : ''
+    )
+    try {
+      if (uid && db && conversationId) {
+        await setDoc(doc(db, 'users', uid, 'inbox', conversationId), {
+          hidden: true,
+          hiddenAt: serverTimestamp(),
+        }, { merge: true })
+      }
+      const remaining = conversations.filter((item) => item.id !== activeId)
+      setConversations(remaining)
+      setActiveId(remaining.find((item) => !item.archived && !deletedChatIds.includes(item.firebaseConversationId || item.id))?.id || '')
+      setShowChatMenu(false)
+      setShowDetails(false)
+      setMobileChatOpen(false)
+      setView('messages')
+      showToast('Chat deleted from your inbox.')
+    } catch (error) {
+      showToast(error?.message || 'Could not delete this chat. Please try again.')
+    }
+  }
+
   const leaveGroup = () => {
     if (!activeConversation || activeConversation.status !== 'group') return
     const groupName = activeConversation.name
@@ -1291,6 +1334,10 @@ function App({ profile, isAdmin = false }) {
           throw new Error('This conversation does not have the expected members.')
         }
       })
+      await setDoc(doc(db, 'users', uid, 'inbox', conversationId), {
+        hidden: false,
+        openedAt: serverTimestamp(),
+      }, { merge: true })
       const existing = conversations.find((item) => item.id === person.id)
       if (existing) {
         setConversations((items) => items.map((item) => item.id === person.id ? { ...item, firebaseConversationId: conversationId } : item))
@@ -1568,6 +1615,7 @@ function App({ profile, isAdmin = false }) {
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, unread: 1 } : item)); setShowChatMenu(false); showToast('Marked as unread') }}><Icon name="message" size={16} />Mark as unread</button>
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, muted: !item.muted } : item)); setShowChatMenu(false); showToast(activeConversation.muted ? 'Conversation unmuted' : 'Conversation muted') }}><Icon name="bell" size={16} />{activeConversation.muted ? 'Unmute conversation' : 'Mute conversation'}</button>
                       <button onClick={archiveConversation}><Icon name="archive" size={16} />{activeConversation.archived ? 'Restore conversation' : 'Archive conversation'}</button>
+                      <button className="danger-menu-item" onClick={deleteChat}><Icon name="trash" size={16} />Delete chat</button>
                       {activeConversation.status === 'group' && <button className="danger-menu-item" onClick={leaveGroup}><Icon name="logout" size={16} />Leave group</button>}
                     </div>
                   )}
