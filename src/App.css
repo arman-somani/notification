@@ -1440,3 +1440,28 @@
   .settings-account-actions .setting-row { flex-wrap: wrap; }
   .settings-logout-button { margin-left: auto; }
 }
+
+
+/* Owner-only Admin navigation and its setup state. */
+.mobile-nav-bar.admin-mobile-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.mobile-nav-bar.admin-mobile-nav button span { font-size: 8px; }
+.admin-access-pending {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: clamp(28px, 5vw, 64px);
+  color: var(--text);
+}
+.admin-access-pending h2 { margin: 10px 0 8px; font-size: clamp(24px, 4vw, 32px); letter-spacing: -1px; }
+.admin-access-pending > p { color: var(--text-soft); font-size: 13px; line-height: 1.7; }
+.admin-pending-check {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.admin-pending-check strong { font-size: 13px; }
+.admin-pending-check span { color: var(--text-soft); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.admin-pending-note { margin-top: 20px; }
