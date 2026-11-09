@@ -361,9 +361,12 @@ const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__'
 function App({ profile, onLogout }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
+    // Authenticated accounts must never see sample conversations or another
+    // browser's cached conversation data as if it were real chat history.
+    if (auth?.currentUser?.uid) return []
     try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
   })
-  const [activeId, setActiveId] = useState('alex')
+  const [activeId, setActiveId] = useState(() => auth?.currentUser?.uid ? '' : 'alex')
   const [view, setView] = useState('messages')
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
@@ -497,7 +500,7 @@ function App({ profile, onLogout }) {
   }, [auth?.currentUser?.uid])
 
   useEffect(() => {
-    if ((!showNewChat && !showFriendRequests) || !auth?.currentUser || !db) return undefined
+    if (!auth?.currentUser || !db) return undefined
     let cancelled = false
     const loadPeopleAndRequests = async () => {
       setDiscoveryLoading(true)
@@ -527,7 +530,7 @@ function App({ profile, onLogout }) {
           return { id: contactUid, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
-        if (usernameTerm.length >= 3) {
+        if (showNewChat && usernameTerm.length >= 3) {
           const peopleSnapshot = await getDocs(query(
             collection(db, 'users'),
             where('username', '>=', usernameTerm),
@@ -543,9 +546,28 @@ function App({ profile, onLogout }) {
             })
         }
         if (!cancelled) {
+          const validContacts = contacts.filter(Boolean)
           setOutgoingFriendRequests(outgoing)
-          setFriendContacts(contacts.filter(Boolean))
+          setFriendContacts(validContacts)
           setDiscoveredUsers(matches)
+          // Keep the inbox backed by accepted Firebase friendships, not demo data.
+          setConversations((current) => {
+            const byId = new Map(current.map((item) => [item.id, item]))
+            validContacts.forEach((person) => {
+              if (!byId.has(person.id)) byId.set(person.id, {
+                ...person,
+                preview: 'Start a conversation',
+                time: '',
+                unread: 0,
+                pinned: false,
+                favorite: false,
+                archived: false,
+                messages: [],
+              })
+            })
+            return [...byId.values()]
+          })
+          setActiveId((current) => current || validContacts[0]?.id || '')
         }
       } catch (error) {
         if (!cancelled) setDiscoveryError(error?.code === 'permission-denied'
@@ -557,7 +579,7 @@ function App({ profile, onLogout }) {
     }
     loadPeopleAndRequests()
     return () => { cancelled = true }
-  }, [showNewChat, showFriendRequests, newChatSearch])
+  }, [showNewChat, showFriendRequests, newChatSearch, auth?.currentUser?.uid])
 
 
   useEffect(() => {
@@ -746,6 +768,22 @@ function App({ profile, onLogout }) {
     if (isAcceptedFriend) {
       const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
       try {
+        // A conversation document must exist before either member can read or
+        // write its messages. Repair older/missing conversations on first send.
+        await runTransaction(db, async (transaction) => {
+          const conversationRef = doc(db, 'conversations', conversationId)
+          const snapshot = await transaction.get(conversationRef)
+          if (!snapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, activeId].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+            throw new Error('This conversation does not have the expected members.')
+          }
+        })
         const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
         await setDoc(messageRef, {
           senderId: uid,
@@ -1242,13 +1280,14 @@ function App({ profile, onLogout }) {
           <div className="online-section">
             <div className="section-label"><span>ONLINE NOW</span><span className="online-count">04</span></div>
             <div className="online-people">
-              {[initialConversations[0], initialConversations[1], initialConversations[3], directoryPeople[2]].map((person) => (
+              {friendContacts.slice(0, 4).map((person) => (
                 <button className="online-person" key={person.id} onClick={() => startConversation(person)} title={person.name}>
                   <Avatar person={person} size="online" showStatus />
                   <span>{person.name.split(' ')[0]}</span>
                 </button>
               ))}
-              <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+3</button>
+              {friendContacts.length > 4 && <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+{friendContacts.length - 4}</button>}
+              {friendContacts.length === 0 && <span className="online-empty">Your accepted friends will appear here.</span>}
             </div>
           </div>
         )}
@@ -1267,7 +1306,7 @@ function App({ profile, onLogout }) {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => view === 'contacts' ? startConversation(conversation) : selectConversation(conversation.id)} />
+              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
             ))}
           </div>
         </div>
