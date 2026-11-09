@@ -5,6 +5,7 @@ import { auth, db, firebaseReady, missingFirebaseConfig } from './firebase/clien
 import AuthScreen from './AuthScreen'
 import LandingPage from './LandingPage'
 import ChatApp from './App'
+import ChatAppErrorBoundary from './ChatAppErrorBoundary'
 import { isDesignatedAdminEmail } from './adminConfig'
 
 const isGmailAddress = (value) => new RegExp('^[^\\s@]+@gmail\\.com$', 'i').test(String(value || '').trim())
@@ -93,5 +94,5 @@ export default function AuthGate() {
     return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => { rejectedAccountMessage.current = ''; setSession({ loading: false, user: null, profile: null, error: '' }); setShowAuth(false) } : undefined} />
   }
 
-  return <ChatApp profile={session.profile} isAdmin={session.isAdmin} onLogout={() => signOut(auth)} />
+  return <ChatAppErrorBoundary><ChatApp profile={session.profile} isAdmin={session.isAdmin} onLogout={() => signOut(auth)} /></ChatAppErrorBoundary>
 }
