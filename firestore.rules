@@ -163,7 +163,23 @@ service cloud.firestore {
         allow create: if isConversationMember(conversationId)
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
-          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
+          && request.resource.data.type in ['text', 'image']
+          && (
+            (
+              request.resource.data.type == 'text'
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 5000
+            )
+            ||
+            (
+              request.resource.data.type == 'image'
+              && request.resource.data.viewOnce == true
+              && request.resource.data.attachmentPath is string
+              && request.resource.data.attachmentPath.size() > 0
+              && request.resource.data.attachmentPath.size() <= 1024
+            )
+          )
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
