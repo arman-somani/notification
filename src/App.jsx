@@ -1321,8 +1321,9 @@ function App({ profile, isAdmin = false }) {
 
       <main className={'main-panel' + (mobileChatOpen ? ' mobile-visible' : '')}>
         {view === 'admin' ? (
-          canAccessAdmin ? <AdminDashboard /> : (
+          canAccessAdmin ? <AdminDashboard onBack={() => { setView('messages'); setMobileChatOpen(false) }} /> : (
             <section className="admin-access-pending">
+              <button type="button" className="admin-mobile-back" onClick={() => { setView('messages'); setMobileChatOpen(false) }}>← Back to chats</button>
               <div className="eyebrow">CONVERLY CONTROL</div>
               <h2>Admin access setup</h2>
               <p>This page is reserved for <strong>armansomani786@gmail.com</strong>.</p>
