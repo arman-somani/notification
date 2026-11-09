@@ -39,11 +39,10 @@ export default function AuthGate() {
       rejectedAccountMessage.current = ''
       setSession({ loading: true, user, profile: null, isAdmin: false, error: '' })
       try {
-        // Refresh Firebase custom claims at sign-in so newly granted/revoked
-        // admin access is reflected without trusting a client-side email flag.
-        const tokenResult = await getIdTokenResult(user, true)
-        const hasAdminClaim = tokenResult.claims.admin === true
-        const isAdmin = isDesignatedAdminEmail(user.email) && user.emailVerified && hasAdminClaim
+        // Admin access is restricted to the exact, Firebase-verified owner email.
+        // This avoids requiring a separately provisioned custom claim.
+        await getIdTokenResult(user, true)
+        const isAdmin = isDesignatedAdminEmail(user.email) && user.emailVerified
         const profileSnapshot = await getDoc(doc(db, 'users', user.uid))
         if (!active) return
         setSession({
