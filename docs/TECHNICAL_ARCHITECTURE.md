@@ -1,4 +1,4 @@
-# Notification — Technical Architecture
+# Converly — Technical Architecture
 
 ## Client
 - React + Vite single-page application.
