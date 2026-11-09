@@ -81,3 +81,16 @@
   font-size: 11px;
   line-height: 1.45;
 }
+
+
+/* Empty, sample-free inbox preview: no invented contacts or messages. */
+.nx-proof-mark{width:27px;height:27px;display:grid;place-items:center;border:1px solid #cdddbd;border-radius:50%;background:#edf5e5;color:#567b35;font-size:13px}
+.nx-empty-inbox{display:grid;justify-items:center;gap:7px;margin:34px 0 0;padding:22px 8px;text-align:center;color:#7b8673}
+.nx-empty-mark{width:31px;height:31px;display:grid;place-items:center;border-radius:11px;background:#eef5e7;color:#638840;font-size:17px}
+.nx-empty-inbox b{color:#46523f;font-size:9px}
+.nx-empty-inbox small{max-width:150px;color:#929b8a;font-size:7px;line-height:1.5}
+.nx-empty-conversation{align-self:stretch;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;text-align:center}
+.nx-empty-conversation>span{width:40px;height:40px;display:grid;place-items:center;border-radius:14px;background:#edf5e5;color:#638840;font-size:21px}
+.nx-empty-conversation>b{color:#394632;font:700 15px 'Manrope';letter-spacing:-.3px}
+.nx-empty-conversation>small{max-width:300px;color:#899382;font-size:9px;line-height:1.7}
+.nx-empty-conversation>button{margin-top:4px;padding:10px 16px;border:0;border-radius:9px;background:#c9f36c;color:#293722;font-size:9px;font-weight:800;cursor:pointer}
