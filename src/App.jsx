@@ -17,7 +17,9 @@ const getConversationActivity = (conversation) => {
 }
 
 // Treat every audio-backed message as a voice message, even if its type metadata differs.
-const isAudioMessage = (message) => message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
+function isAudioMessage(message) {
+  return message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
+}
 
 const composerEmojiOptions = ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😍','🥰','😘','😋','😎','🤩','🥳','🤔','🤗','🤭','😴','😭','😢','😡','😮','😱','🙏','👏','👍','👎','👌','✌️','🤝','🙌','💪','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💯','🔥','✨','🎉','🎂','🌹','☀️','🌙','⭐','☕','🍕','🎈','💡','✅','❌']
 
