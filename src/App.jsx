@@ -22,6 +22,12 @@ const avatarOptions = [
   { id: 'female-05', gender: 'female', label: 'Pixie', skin: '#bcbcb8', hair: '#3c3c39', shirt: '#858580', back: 'M16 29C14 13 21 6 32 6s18 8 16 24l-4 8H20Z', front: 'M15 26C14 12 22 6 33 6c9 0 16 6 16 18-6-2-9-6-12-10-4 7-12 11-22 12Z' },
 ]
 
+
+avatarOptions.push(
+  ...avatarOptions.filter((avatar) => avatar.gender === 'male').slice(0, 5).map((avatar, index) => ({ ...avatar, id: 'male-' + String(index + 6).padStart(2, '0'), label: ['Textured', 'Modern', 'Tousled', 'Sleek', 'Casual'][index], hair: ['#252525', '#55504b', '#343b43', '#292d35', '#51483f'][index], shirt: ['#5c6b78', '#6b625b', '#526b62', '#6c5b70', '#77705f'][index] })),
+  ...avatarOptions.filter((avatar) => avatar.gender === 'female').slice(0, 5).map((avatar, index) => ({ ...avatar, id: 'female-' + String(index + 6).padStart(2, '0'), label: ['Braided', 'Layered', 'Wavy bob', 'Long fringe', 'Elegant'][index], hair: ['#44352e', '#252b35', '#59483f', '#39313d', '#4c423b'][index], shirt: ['#75636a', '#65716c', '#77705d', '#6b6278', '#6b6b79'][index] })),
+)
+
 function AvatarArtwork({ avatarId }) {
   const avatar = avatarOptions.find((option) => option.id === avatarId)
   if (!avatar) return null
@@ -255,7 +261,7 @@ function App({ profile, isAdmin = false }) {
   const [profileAvatar, setProfileAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
-  const [avatarPickerGender, setAvatarPickerGender] = useState(() => (localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male')
+  const [avatarPickerGender, setAvatarPickerGender] = useState(() => profile?.gender || ((localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male'))
   const messageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -618,14 +624,21 @@ function App({ profile, isAdmin = false }) {
 
   const openAvatarPicker = () => {
     setProfileMenuOpen(false)
-    showToast('Profile avatars are preset and cannot be changed.')
+    setDraftAvatar(profileAvatar)
+    setAvatarPickerGender(profile?.gender || (profileAvatar.startsWith('female') ? 'female' : 'male'))
+    setShowAvatarPicker(true)
   }
 
-  const saveAvatarSelection = () => {
-    setProfileAvatar(draftAvatar)
-    localStorage.setItem('notification-profile-avatar', draftAvatar)
-    setShowAvatarPicker(false)
-    showToast('Your avatar has been updated')
+  const saveAvatarSelection = async () => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) { showToast('Could not save your avatar. Please sign in again.'); return }
+    try {
+      await setDoc(doc(db, 'users', uid), { avatarId: draftAvatar, gender: avatarPickerGender, updatedAt: serverTimestamp() }, { merge: true })
+      setProfileAvatar(draftAvatar)
+      localStorage.setItem('notification-profile-avatar', draftAvatar)
+      setShowAvatarPicker(false)
+      showToast('Your avatar has been updated')
+    } catch (error) { showToast(error?.message || 'Could not save your avatar.') }
   }
 
   useEffect(() => {
@@ -1447,6 +1460,12 @@ function App({ profile, isAdmin = false }) {
             </div>
             <div className="settings-content">
               <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Profile appearance</strong><span>Choose how people see you across Converly</span></div>
+                <div className="setting-row profile-avatar-setting">
+                  <Avatar person={{ avatarId: profileAvatar }} size="lg" />
+                  <span className="setting-copy"><strong>Profile avatar</strong><small>{profile?.gender === 'female' ? 'Female' : profile?.gender === 'male' ? 'Male' : (profileAvatar.startsWith('female') ? 'Female' : 'Male')} avatar · 20 options available</small></span>
+                  <button className="settings-logout-button" type="button" onClick={openAvatarPicker}>Change avatar</button>
+                </div>
                 <div className="settings-section-title"><strong>Account</strong><span>Manage your Converly session</span></div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="logout" /></span>
@@ -1753,13 +1772,13 @@ function App({ profile, isAdmin = false }) {
               <div>
                 <div className="eyebrow">YOUR PROFILE</div>
                 <h2 id="avatar-picker-title">Choose your avatar</h2>
-                <p>Select one of 10 built-in illustrations. Profile photo uploads are not available.</p>
+                <p>Select from 20 built-in illustrations. Profile photo uploads are not available.</p>
               </div>
               <button className="icon-button" onClick={() => setShowAvatarPicker(false)} aria-label="Close avatar picker"><Icon name="close" /></button>
             </div>
             <div className="avatar-gender-tabs" role="group" aria-label="Avatar style">
-              <button className={avatarPickerGender === 'male' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('male'); if (!draftAvatar.startsWith('male')) setDraftAvatar('male-01') }}>Male avatars <span>5</span></button>
-              <button className={avatarPickerGender === 'female' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('female'); if (!draftAvatar.startsWith('female')) setDraftAvatar('female-01') }}>Female avatars <span>5</span></button>
+              <button className={avatarPickerGender === 'male' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('male'); if (!draftAvatar.startsWith('male')) setDraftAvatar('male-01') }}>Male avatars <span>10</span></button>
+              <button className={avatarPickerGender === 'female' ? 'selected' : ''} onClick={() => { setAvatarPickerGender('female'); if (!draftAvatar.startsWith('female')) setDraftAvatar('female-01') }}>Female avatars <span>10</span></button>
             </div>
             <div className="avatar-choice-grid">
               {avatarOptions.filter((avatar) => avatar.gender === avatarPickerGender).map((avatar) => (
@@ -1770,7 +1789,7 @@ function App({ profile, isAdmin = false }) {
                 </button>
               ))}
             </div>
-            <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from the 10 preset avatars. You can change your selection anytime.</div>
+            <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from 20 preset avatars. You can change your selection anytime.</div>
             <div className="avatar-picker-actions">
               <button className="secondary-button" onClick={() => setShowAvatarPicker(false)}>Cancel</button>
               <button className="primary-button" onClick={saveAvatarSelection}><Icon name="check" size={15} /> Use this avatar</button>
