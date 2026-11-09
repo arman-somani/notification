@@ -12,16 +12,10 @@ service firebase.storage {
         && request.auth.uid in firestore.get(conversationPath).data.memberIds;
     }
 
-    // Shared images are limited to members of the matching conversation.
-    // The sender ID is attached as trusted upload metadata for auditability.
+    // Chat images are stored as private ImageKit assets and delivered by the
+    // authenticated Cloudflare Worker. Firebase Storage must not expose them.
     match /conversations/{conversationId}/images/{messageId}/{fileName} {
-      allow read: if isConversationMember(conversationId);
-      allow create: if isConversationMember(conversationId)
-        && request.resource.size > 0
-        && request.resource.size < 3 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
-        && request.resource.metadata.senderId == request.auth.uid;
-      allow update, delete: if false;
+      allow read, write: if false;
     }
 
     match /conversations/{conversationId}/voice/{messageId}/{fileName} {
@@ -32,8 +26,7 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
-    // View-once media is intentionally inaccessible through direct client reads.
-    // A trusted backend must authorize and consume the one-time view atomically.
+    // No direct client access to one-time media objects.
     match /conversations/{conversationId}/view-once/{messageId}/{fileName} {
       allow read, write: if false;
     }
