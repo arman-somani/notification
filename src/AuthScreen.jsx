@@ -20,6 +20,9 @@ const explainAuthError = (error) => {
     case 'auth/popup-blocked': return 'Your browser blocked the Google sign-in popup. Allow popups for this site and try again.'
     case 'auth/cancelled-popup-request': return 'A Google sign-in window is already open. Finish that window or try again.'
     case 'auth/account-exists-with-different-credential': return 'An account already exists with this Gmail address. Sign in using your existing password first.'
+    case 'auth/unauthorized-domain': return 'This website domain is not authorized in Firebase Authentication. Add the current domain under Authentication → Settings → Authorized domains.'
+    case 'auth/credential-already-in-use': return 'This Google account is already linked to another Converly account.'
+    case 'auth/web-storage-unsupported': return 'Your browser is blocking the storage required for Google sign-in. Enable cookies/site storage and try again.'
     case 'auth/network-request-failed': return 'Network error. Check your internet connection.'
     default: return error?.message || 'Something went wrong. Please try again.'
   }
