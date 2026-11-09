@@ -1360,7 +1360,7 @@ function App({ profile, onLogout }) {
               <p>Make Notification feel like yours.</p>
             </div>
             <div className="settings-content">
-              <AccountPrivacyPanel />
+              <AccountPrivacyPanel profile={profile} />
               <div className="settings-section">
                 <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
                 <div className="setting-row">
@@ -1398,7 +1398,7 @@ function App({ profile, onLogout }) {
                   <span className="coming-soon">COMING SOON</span>
                 </div>
               </div>
-              <div className="demo-note"><Icon name="info" size={16} /><span>Phase 1 preview: preferences are stored locally in this browser. Account sync will arrive with the Firebase integration.</span></div>
+              <div className="demo-note"><Icon name="info" size={16} /><span>Profile and privacy settings sync to your account. Appearance, sound and compact-view preferences stay on this device.</span></div>
             </div>
           </section>
         ) : activeConversation ? (
