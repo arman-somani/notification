@@ -1420,7 +1420,7 @@ function App({ profile }) {
   return (
     <div className={'app-shell' + (mobileChatOpen ? ' mobile-chat-open' : '') + (compactMode ? ' compact-mode' : '')}>
       <aside className="nav-rail">
-        <button className="brand-mark" aria-label="Notification home" onClick={() => { setView('messages'); setMobileChatOpen(false) }}>
+        <button className="brand-mark" aria-label="Converly home" onClick={() => { setView('messages'); setMobileChatOpen(false) }}>
           <span className="brand-mark-shape"><BrandGlyph size={22} /></span>
         </button>
         <div className="rail-divider" />
@@ -1454,7 +1454,7 @@ function App({ profile }) {
         <div className="inbox-topbar">
           <div className="wordmark">
             <span className="wordmark-icon"><BrandGlyph size={19} /></span>
-            <span>notification<span className="wordmark-period">.</span></span>
+            <span>converly<span className="wordmark-period">.</span></span>
           </div>
           <button className="icon-button new-chat-button" onClick={() => setShowNewChat(true)} aria-label="Start a new chat" title="New chat"><Icon name="plus" size={19} /></button>
         </div>
@@ -1562,11 +1562,11 @@ function App({ profile }) {
             <div className="settings-header">
               <div className="eyebrow">PREFERENCES</div>
               <h2>Settings</h2>
-              <p>Make Notification feel like yours.</p>
+              <p>Make Converly feel like yours.</p>
             </div>
             <div className="settings-content">
               <div className="settings-section settings-account-actions">
-                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
+                <div className="settings-section-title"><strong>Account</strong><span>Manage your Converly session</span></div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="logout" /></span>
                   <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
@@ -1857,7 +1857,7 @@ function App({ profile }) {
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
             <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={closeViewOnceImage} aria-label="Close image"><Icon name="close" size={19} /></button></div>
             <img src={viewOnceImage.src} alt="Opened view-once image" />
-            <p>This image can only be opened once in Notification. Close it to finish viewing.</p>
+            <p>This image can only be opened once in Converly. Close it to finish viewing.</p>
           </section>
         </div>
       )}
@@ -1933,7 +1933,7 @@ function App({ profile }) {
             {newChatSearch.trim().replace(/^@/, '').length < 3 && (
               <div className="directory-empty">Enter at least 3 characters of someone's username to find them.</div>
             )}
-            {discoveryLoading && <div className="directory-empty">Searching Notification…</div>}
+            {discoveryLoading && <div className="directory-empty">Searching for people…</div>}
             {discoveryError && <div className="directory-empty friend-error">{discoveryError}</div>}
             {!discoveryLoading && newChatSearch.trim().replace(/^@/, '').length >= 3 && (
               <div className="directory-list">
