@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { signOut } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
-import { auth, db, storage } from './firebase/client'
+import { getIdToken, signOut } from 'firebase/auth'
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 
@@ -637,52 +636,39 @@ function App({ profile }) {
       limit(300),
     )
     let snapshotGeneration = 0
-    const unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const generation = ++snapshotGeneration
-      try {
-        const messages = await Promise.all(snapshot.docs.map(async (messageDoc) => {
-          const data = messageDoc.data()
-          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-          let imageUrl = ''
-          if (data.type === 'image' && data.attachmentPath && storage) {
-            try {
-              imageUrl = await getDownloadURL(storageRef(storage, data.attachmentPath))
-            } catch {
-              imageUrl = ''
-            }
-          }
-          return {
-            id: messageDoc.id,
-            from: data.senderId === uid ? 'me' : 'them',
-            senderId: data.senderId,
-            type: data.type || 'text',
-            text: data.text || '',
-            attachmentPath: data.attachmentPath || '',
-            imageUrl,
-            viewOnce: data.viewOnce === true,
-            viewed: data.senderId !== uid && data.viewedByUid === uid,
-            replyToId: data.replyToId,
-            replyToText: data.replyToText,
-            editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
-            time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-            status: data.senderId === uid ? 'sent' : 'received',
-          }
-        }))
-        if (generation !== snapshotGeneration) return
-        const latestMessage = messages[messages.length - 1]
-        const preview = latestMessage
-          ? latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
-          : 'Start a conversation'
-        setConversations((items) => {
-          const exists = items.some((item) => item.id === activeId)
-          if (!exists) return items
-          return items.map((item) => item.id === activeId
-            ? { ...item, firebaseConversationId: conversationId, messages, preview, time: latestMessage?.time || item.time }
-            : item)
-        })
-      } catch (error) {
-        showToast(error?.message || 'Could not load shared images.')
-      }
+      const messages = snapshot.docs.map((messageDoc) => {
+        const data = messageDoc.data()
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+        return {
+          id: messageDoc.id,
+          from: data.senderId === uid ? 'me' : 'them',
+          senderId: data.senderId,
+          type: data.type || 'text',
+          text: data.text || '',
+          attachmentPath: data.attachmentPath || '',
+          viewOnce: data.viewOnce === true,
+          viewed: data.senderId !== uid && Boolean(data.viewedByUid),
+          replyToId: data.replyToId,
+          replyToText: data.replyToText,
+          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
+          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          status: data.senderId === uid ? 'sent' : 'received',
+        }
+      })
+      if (generation !== snapshotGeneration) return
+      const latestMessage = messages[messages.length - 1]
+      const preview = latestMessage
+        ? latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
+        : 'Start a conversation'
+      setConversations((items) => {
+        const exists = items.some((item) => item.id === activeId)
+        if (!exists) return items
+        return items.map((item) => item.id === activeId
+          ? { ...item, firebaseConversationId: conversationId, messages, preview, time: latestMessage?.time || item.time }
+          : item)
+      })
     }, (error) => {
       setToast(error?.code === 'permission-denied'
         ? 'Message sync permission denied. Deploy the latest Firestore rules.'
@@ -831,17 +817,16 @@ function App({ profile }) {
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
 
-    // Clear the controlled composer immediately after accepting the send action.
-    // If Firebase rejects the write, restore the text unless the user has already
-    // started composing a newer message.
+    // Clear the writing box immediately. Restore only if the message write itself fails.
     setMessageText('')
     const uid = auth?.currentUser?.uid
     const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
     if (isAcceptedFriend) {
       const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+      const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+      let sendStage = 'checking conversation membership'
+
       try {
-        // A conversation document must exist before either member can read or
-        // write its messages. Repair older/missing conversations on first send.
         await runTransaction(db, async (transaction) => {
           const conversationRef = doc(db, 'conversations', conversationId)
           const snapshot = await transaction.get(conversationRef)
@@ -856,7 +841,8 @@ function App({ profile }) {
             throw new Error('This conversation does not have the expected members.')
           }
         })
-        const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+
+        sendStage = 'writing the message'
         await setDoc(messageRef, {
           senderId: uid,
           type: 'text',
@@ -864,21 +850,30 @@ function App({ profile }) {
           createdAt: serverTimestamp(),
           ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
         })
+      } catch (error) {
+        setMessageText((current) => current.trim() ? current : text)
+        const details = error?.code === 'permission-denied'
+          ? 'Firestore denied ' + sendStage + '. Confirm that the latest firestore.rules are deployed to notification-32ea1.'
+          : error?.message || 'Could not send the message. Please try again.'
+        showToast(details)
+        return
+      }
+
+      // The message is already saved. An inbox preview failure must not report the
+      // message as failed or put the already-sent text back into the composer.
+      setReplyTarget(null)
+      messageInputRef.current?.focus()
+      try {
         await setDoc(doc(db, 'conversations', conversationId), {
           lastMessageAt: serverTimestamp(),
           lastMessagePreview: text.slice(0, 160),
           lastMessageSenderId: uid,
           updatedAt: serverTimestamp(),
         }, { merge: true })
-        // The composer was already cleared before the async write started.
-        // Do not clear it again here: the user may have started a new draft.
-        setReplyTarget(null)
-        messageInputRef.current?.focus()
       } catch (error) {
-        setMessageText((current) => current.trim() ? current : text)
         showToast(error?.code === 'permission-denied'
-          ? 'Firebase denied this message. Check that the latest Firestore rules are deployed.'
-          : error?.message || 'Could not send message. Please try again.')
+          ? 'Message sent. Firestore denied the inbox preview update; deploy the latest firestore.rules.'
+          : 'Message sent, but the inbox preview could not be updated: ' + (error?.message || 'unknown error'))
       }
       return
     }
@@ -893,6 +888,69 @@ function App({ profile }) {
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
+  const getMediaApiUrl = () => String(import.meta.env.VITE_NOTIFICATION_API_URL || '').replace(/\/+$/, '')
+
+  const openSharedImage = async (message) => {
+    const apiUrl = getMediaApiUrl()
+    const user = auth?.currentUser
+    if (!apiUrl || !user || !activeConversation) {
+      showToast('Image service is not configured or you are signed out.')
+      return
+    }
+    if (!message.attachmentPath) {
+      showToast('This image does not have a saved ImageKit path. Send it again after updating the Worker.')
+      return
+    }
+
+    try {
+      const idToken = await getIdToken(user)
+      const response = await fetch(apiUrl + '/media/open', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + idToken,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId: activeConversation.firebaseConversationId || directConversationId(user.uid, activeId),
+          messageId: message.id,
+        }),
+      })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        if (response.status === 410 || result.code === 'image_already_opened') {
+          setConversations((items) => items.map((item) => item.id === activeId
+            ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true } : entry) }
+            : item))
+        }
+        throw new Error(result.error || 'The image could not be opened.')
+      }
+
+      const imageBlob = await response.blob()
+      const objectUrl = URL.createObjectURL(imageBlob)
+      const senderView = message.from === 'me'
+      setViewOnceImage({ id: message.id, src: objectUrl, senderView })
+      if (!senderView) {
+        setConversations((items) => items.map((item) => item.id === activeId
+          ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true } : entry) }
+          : item))
+      }
+    } catch (error) {
+      showToast(error?.message || 'Could not open this shared image.')
+    }
+  }
+
+  const closeViewOnceImage = () => {
+    if (!viewOnceImage) return
+    if (viewOnceImage.src?.startsWith('blob:')) URL.revokeObjectURL(viewOnceImage.src)
+    if (!viewOnceImage.senderView) {
+      const openedId = viewOnceImage.id
+      setConversations((items) => items.map((item) => item.id === activeId
+        ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, viewed: true } : message) }
+        : item))
+    }
+    setViewOnceImage(null)
+  }
+
   const handleFile = async (event) => {
     const input = event.currentTarget
     const file = input.files?.[0]
@@ -903,25 +961,24 @@ function App({ profile }) {
       showToast('Choose a JPG, PNG, WEBP or GIF image.')
       return
     }
-    if (file.size >= 3 * 1024 * 1024) {
-      showToast('Choose an image smaller than 3 MB.')
+    if (file.size < 1 || file.size > 3 * 1024 * 1024) {
+      showToast('Choose an image up to 3 MB.')
       return
     }
 
     const uid = auth?.currentUser?.uid
-    const isAcceptedFriend = uid && db && storage && friendContacts.some((person) => person.id === activeId)
+    const apiUrl = getMediaApiUrl()
+    const isAcceptedFriend = uid && db && apiUrl && friendContacts.some((person) => person.id === activeId)
     if (!isAcceptedFriend) {
-      showToast('Image sharing requires a signed-in account and an accepted friend conversation.')
+      showToast('Image sharing requires a signed-in account, the media Worker URL, and an accepted friend conversation.')
       return
     }
 
     const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
     const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
-    const safeExtension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'jpg'
-    const imageRef = storageRef(storage, `conversations/${conversationId}/images/${messageRef.id}/image.${safeExtension}`)
 
     try {
-      // Ensure both participants are members before allowing an attachment upload.
+      // Repair older conversations before requesting the Worker upload.
       await runTransaction(db, async (transaction) => {
         const conversationRef = doc(db, 'conversations', conversationId)
         const snapshot = await transaction.get(conversationRef)
@@ -937,20 +994,41 @@ function App({ profile }) {
         }
       })
 
-      await uploadBytes(imageRef, file, {
-        contentType: file.type,
-        customMetadata: { senderId: uid },
+      const idToken = await getIdToken(auth.currentUser)
+      const uploadForm = new FormData()
+      uploadForm.append('conversationId', conversationId)
+      uploadForm.append('messageId', messageRef.id)
+      uploadForm.append('file', file, file.name)
+
+      const uploadResponse = await fetch(apiUrl + '/media/upload', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + idToken },
+        body: uploadForm,
       })
+      const uploadResult = await uploadResponse.json().catch(() => ({}))
+      if (!uploadResponse.ok || !uploadResult.filePath) {
+        throw new Error(uploadResult.error || 'The image upload service rejected this file.')
+      }
 
       await setDoc(messageRef, {
         senderId: uid,
         type: 'image',
-        attachmentPath: imageRef.fullPath,
+        attachmentPath: uploadResult.filePath,
         viewOnce: true,
         createdAt: serverTimestamp(),
         ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
       })
 
+      setConversations((items) => items.map((item) => item.id === activeId
+        ? {
+          ...item,
+          firebaseConversationId: conversationId,
+          preview: 'Photo',
+          time: 'Now',
+          lastActivityAt: Date.now(),
+        }
+        : item))
+      setReplyTarget(null)
       try {
         await setDoc(doc(db, 'conversations', conversationId), {
           lastMessageAt: serverTimestamp(),
@@ -959,45 +1037,11 @@ function App({ profile }) {
           updatedAt: serverTimestamp(),
         }, { merge: true })
       } catch {
-        showToast('Image sent, but the inbox preview could not be updated.')
+        showToast('Photo sent. The inbox preview could not be updated.')
       }
-
-      const imageUrl = await getDownloadURL(imageRef)
-      const localMessage = {
-        id: messageRef.id,
-        from: 'me',
-        senderId: uid,
-        type: 'image',
-        attachmentPath: imageRef.fullPath,
-        imageUrl,
-        viewOnce: true,
-        viewed: false,
-        time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        status: 'sent',
-      }
-      setConversations((items) => items.map((item) => item.id === activeId
-        ? {
-          ...item,
-          firebaseConversationId: conversationId,
-          messages: item.messages.some((message) => message.id === localMessage.id)
-            ? item.messages
-            : [...item.messages, localMessage],
-          preview: 'Photo',
-          time: 'Now',
-          lastActivityAt: Date.now(),
-        }
-        : item))
-      setReplyTarget(null)
-      showToast('Image sent.')
+      showToast('Photo sent.')
     } catch (error) {
-      const details = String(error?.message || '')
-      const billingBlocked = /billing|Spark pricing|402|403/i.test(details)
-      const message = billingBlocked
-        ? 'Firebase Storage is unavailable for this project. Check its billing plan and Storage bucket.'
-        : error?.code === 'storage/unauthorized' || error?.code === 'permission-denied'
-          ? 'Firebase denied this image. Deploy the updated Firestore and Storage rules.'
-          : details || 'Could not send the image. Please try again.'
-      showToast(message)
+      showToast(error?.message || 'Could not send the image. Please try again.')
     }
   }
 
@@ -1614,51 +1658,18 @@ function App({ profile }) {
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
                         message.from === 'me' ? (
-                          message.senderViewed ? (
-                            <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>You opened this image · unavailable</span></div>
-                          ) : (
-                            <button type="button" className="image-message image-view-once image-locked" disabled={!(message.imageData || message.imageUrl)} onClick={() => {
-                              const imageSource = message.imageData || message.imageUrl
-                              if (!imageSource || message.senderViewed) return
-                              setViewOnceImage({ id: message.id, src: imageSource, senderView: true })
-                              setConversations((items) => items.map((item) => item.id === activeId ? {
-                                ...item,
-                                messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, senderViewed: true, senderOpenedAt: Date.now() } : entry),
-                              } : item))
-                            }}>
-                              <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                              <strong>{message.imageData || message.imageUrl ? 'Your sent image' : 'Image unavailable'}</strong>
-                              <small>{message.imageData || message.imageUrl ? 'Open once · you cannot reopen it after closing' : 'Shared image could not be loaded'}</small>
-                            </button>
-                          )
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.attachmentPath} onClick={() => openSharedImage(message)}>
+                            <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
+                            <strong>Your sent image</strong>
+                            <small>{message.attachmentPath ? 'Preview your sent image' : 'Image file is unavailable'}</small>
+                          </button>
                         ) : message.viewed ? (
                           <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>Opened · image unavailable</span></div>
                         ) : (
-                          <button type="button" className="image-message image-view-once image-locked" disabled={!(message.imageData || message.imageUrl) || message.viewed} onClick={async () => {
-                            const imageSource = message.imageData || message.imageUrl
-                            if (!imageSource || message.viewed) return
-                            const uid = auth?.currentUser?.uid
-                            if (uid && db && message.attachmentPath) {
-                              try {
-                                const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
-                                await updateDoc(doc(db, 'conversations', conversationId, 'messages', message.id), {
-                                  viewedByUid: uid,
-                                  viewedAt: serverTimestamp(),
-                                })
-                              } catch (error) {
-                                showToast(error?.message || 'Could not open this shared image.')
-                                return
-                              }
-                            }
-                            setViewOnceImage({ id: message.id, src: imageSource })
-                            setConversations((items) => items.map((item) => item.id === activeId ? {
-                              ...item,
-                              messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, imageData: null, imageUrl: null, openedAt: Date.now() } : entry),
-                            } : item))
-                          }}>
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.attachmentPath} onClick={() => openSharedImage(message)}>
                             <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                            <strong>{message.imageData || message.imageUrl ? 'Image waiting for you' : 'Image unavailable'}</strong>
-                            <small>{message.imageData || message.imageUrl ? 'Open once · it cannot be reopened after closing' : message.attachmentPath ? 'Could not load shared image. Refresh and try again.' : 'Image file is unavailable'}</small>
+                            <strong>Image waiting for you</strong>
+                            <small>{message.attachmentPath ? 'Open once · it cannot be reopened after closing' : 'Image file is unavailable'}</small>
                           </button>
                         )
                       ) : isAudioMessage(message) ? (
@@ -1827,17 +1838,9 @@ function App({ profile }) {
       </main>
 
       {viewOnceImage && (
-        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
-          const openedId = viewOnceImage.id
-          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null, imageUrl: null, viewed: true } : message) } : item))
-          setViewOnceImage(null)
-        } }}>
+        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeViewOnceImage() }}>
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
-            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
-              const openedId = viewOnceImage.id
-              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null, imageUrl: null, viewed: true } : message) } : item))
-              setViewOnceImage(null)
-            }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
+            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={closeViewOnceImage} aria-label="Close image"><Icon name="close" size={19} /></button></div>
             <img src={viewOnceImage.src} alt="Opened view-once image" />
             <p>This image can only be opened once in Notification. Close it to finish viewing.</p>
           </section>
