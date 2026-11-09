@@ -1,12 +1,12 @@
-# Firebase setup for Notification
+# Firebase setup for Converly
 
 This guide prepares the existing React/Vite app for its first real backend connection. Keep the current UI and sample data until authentication and the first Firestore flow have been tested.
 
 ## 1. Create the Firebase project
 
 1. Open the Firebase Console: https://console.firebase.google.com/
-2. Create a project named **Notification** (or select the project you already created).
-3. Add a Web App named **Notification Web**.
+2. Set the Firebase project display name to **Converly** (keep the existing project ID) (or select the project you already created).
+3. Add a Web App named **Converly Web**.
 4. Copy the Firebase web app configuration. These are public client configuration values; do not copy a service-account JSON key.
 
 ## 2. Enable the required Firebase products
@@ -31,7 +31,7 @@ In your local project folder D:\Projects\Notification, create .env.local by copy
     VITE_FIREBASE_DATABASE_URL=...
     VITE_NOTIFICATION_API_URL=https://notification-api.mediatoolkit.workers.dev
 
-The Realtime Database URL is shown in the Firebase Console under Realtime Database. .env.local is ignored by Git. Never put service-account credentials, Admin SDK private keys, or the ImageKit private key in a VITE_* variable. The Notification API URL is public; Worker secrets stay in Cloudflare.
+The Realtime Database URL is shown in the Firebase Console under Realtime Database. .env.local is ignored by Git. Never put service-account credentials, Admin SDK private keys, or the ImageKit private key in a VITE_* variable. The Converly API endpoint URL is public; Worker secrets stay in Cloudflare.
 
 After creating or changing .env.local, restart Vite:
 
