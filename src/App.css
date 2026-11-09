@@ -1515,3 +1515,10 @@
   }
   .messages-scroll { overflow-x: hidden; }
 }
+
+/* Give the owner-only mobile Admin destination enough room when it is visible. */
+@media (max-width: 760px) {
+  .mobile-nav-bar.admin-mobile-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .mobile-nav-bar.admin-mobile-nav button { min-width: 0; }
+  .mobile-nav-bar.admin-mobile-nav button span { font-size: 8px; }
+}
