@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { getIdTokenResult, onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth, db, firebaseReady, missingFirebaseConfig } from './firebase/client'
 import AuthScreen from './AuthScreen'
 import LandingPage from './LandingPage'
 import ChatApp from './App'
+import { isDesignatedAdminEmail } from './adminConfig'
+
+const isGmailAddress = (value) => new RegExp('^[^\\s@]+@gmail\\.com$', 'i').test(String(value || '').trim())
 
 export default function AuthGate() {
   const [showAuth, setShowAuth] = useState(false)
-  const [session, setSession] = useState({ loading: true, user: null, profile: null, error: '' })
+  const [session, setSession] = useState({ loading: true, user: null, profile: null, isAdmin: false, error: '' })
+  const rejectedAccountMessage = useRef('')
 
   useEffect(() => {
     if (!firebaseReady || !auth || !db) {
-      setSession({ loading: false, user: null, profile: null, error: '' })
+      setSession({ loading: false, user: null, profile: null, isAdmin: false, error: '' })
       return undefined
     }
 
@@ -20,23 +24,38 @@ export default function AuthGate() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!active) return
       if (!user) {
-        setSession({ loading: false, user: null, profile: null, error: '' })
+        setSession({ loading: false, user: null, profile: null, isAdmin: false, error: rejectedAccountMessage.current })
         return
       }
 
-      setSession({ loading: true, user, profile: null, error: '' })
+      if (!isGmailAddress(user.email)) {
+        rejectedAccountMessage.current = 'Only @gmail.com accounts can use Converly. Please sign in with a Gmail address.'
+        setShowAuth(true)
+        try { await signOut(auth) } catch { /* The app remains locked out unless a Gmail account signs in. */ }
+        if (active) setSession({ loading: false, user: null, profile: null, isAdmin: false, error: rejectedAccountMessage.current })
+        return
+      }
+
+      rejectedAccountMessage.current = ''
+      setSession({ loading: true, user, profile: null, isAdmin: false, error: '' })
       try {
+        // Refresh Firebase custom claims at sign-in so newly granted/revoked
+        // admin access is reflected without trusting a client-side email flag.
+        const tokenResult = await getIdTokenResult(user, true)
+        const hasAdminClaim = tokenResult.claims.admin === true
+        const isAdmin = isDesignatedAdminEmail(user.email) && user.emailVerified && hasAdminClaim
         const profileSnapshot = await getDoc(doc(db, 'users', user.uid))
         if (!active) return
         setSession({
           loading: false,
           user,
           profile: profileSnapshot.exists() ? profileSnapshot.data() : null,
+          isAdmin,
           error: '',
         })
       } catch {
         if (!active) return
-        setSession({ loading: false, user, profile: null, error: 'We could not load your profile. Check your connection and try again.' })
+        setSession({ loading: false, user, profile: null, isAdmin: false, error: 'We could not load your profile. Check your connection and try again.' })
       }
     })
 
@@ -72,8 +91,8 @@ export default function AuthGate() {
 
   if (!session.user || !session.profile) {
     if (!session.user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />
-    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => setShowAuth(false) : undefined} />
+    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => { rejectedAccountMessage.current = ''; setSession({ loading: false, user: null, profile: null, error: '' }); setShowAuth(false) } : undefined} />
   }
 
-  return <ChatApp profile={session.profile} onLogout={() => signOut(auth)} />
+  return <ChatApp profile={session.profile} isAdmin={session.isAdmin} onLogout={() => signOut(auth)} />
 }
