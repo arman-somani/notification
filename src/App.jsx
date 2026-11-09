@@ -218,6 +218,11 @@ function VoiceMessagePlayer({ src, className = '' }) {
   )
 }
 
+const normalizeDisplayName = (value, fallback = 'Converly user') => {
+  const name = String(value || '').trim()
+  return name || fallback
+}
+
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
 
 function App({ profile, isAdmin = false }) {
@@ -386,7 +391,7 @@ function App({ profile, isAdmin = false }) {
           const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
-          return { id: contactUid, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+          return { id: contactUid, name: normalizeDisplayName(data.displayName || data.username), username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
         if (showNewChat && usernameTerm.length >= 3) {
@@ -400,7 +405,7 @@ function App({ profile, isAdmin = false }) {
             .filter((item) => item.id !== uid && item.data().privacy?.discoverable !== false)
             .map((item) => {
               const data = item.data()
-              const name = data.displayName || data.username
+              const name = normalizeDisplayName(data.displayName || data.username)
               return { id: item.id, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
             })
         }
@@ -465,7 +470,7 @@ function App({ profile, isAdmin = false }) {
       setConversations((items) => {
         let changed = false
         const next = items.map((conversation) => {
-          const messages = conversation.messages.map((message) => {
+          const messages = (Array.isArray(conversation.messages) ? conversation.messages : []).map((message) => {
             return message
           }).filter((message) => { const keep = !message.expiresAt || message.expiresAt > now; if (!keep) changed = true; return keep })
           return messages.length === conversation.messages.length && !messages.some((message, index) => message !== conversation.messages[index]) ? conversation : { ...conversation, messages }
@@ -593,7 +598,7 @@ function App({ profile, isAdmin = false }) {
 
     if (listFilter === 'unread') items = items.filter((item) => item.unread > 0)
     const query = search.trim().toLowerCase()
-    if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
+    if (query) items = items.filter((item) => String(item.name || 'Converly user').toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
     return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
   }, [conversations, directory, listFilter, search, view])
 
@@ -665,7 +670,7 @@ function App({ profile, isAdmin = false }) {
     setConversations((items) => items.map((item) => {
       if (item.id !== activeId) return item
       let conversationChanged = item.unread !== 0
-      const messages = item.messages.map((message) => {
+      const messages = (Array.isArray(item.messages) ? item.messages : []).map((message) => {
         const wasSeenByRecipient = message.from === 'me' && message.read === true
         const isReceivedHere = message.from !== 'me'
         if (message.seenAt || (!wasSeenByRecipient && !isReceivedHere)) return message
@@ -1197,7 +1202,7 @@ function App({ profile, isAdmin = false }) {
         const senderProfile = await getDoc(doc(db, 'users', request.senderId))
         if (senderProfile.exists()) {
           const data = senderProfile.data()
-          const name = data.displayName || data.username
+          const name = normalizeDisplayName(data.displayName || data.username)
           setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
         }
         showToast('Friend request accepted')
@@ -1363,7 +1368,7 @@ function App({ profile, isAdmin = false }) {
               {friendContacts.slice(0, 4).map((person) => (
                 <button className="online-person" key={person.id} onClick={() => startConversation(person)} title={person.name}>
                   <Avatar person={person} size="online" showStatus />
-                  <span>{person.name.split(' ')[0]}</span>
+                  <span>{String(person.name || 'Friend').split(' ')[0]}</span>
                 </button>
               ))}
               {friendContacts.length > 4 && <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+{friendContacts.length - 4}</button>}
@@ -1514,7 +1519,7 @@ function App({ profile, isAdmin = false }) {
                 {activeConversation.messages.length === 0 ? (
                   <div className="chat-empty-state">
                     <div className="empty-avatar"><Avatar person={activeConversation} size="xl" /></div>
-                    <strong>Say hello to {activeConversation.name.split(' ')[0]}</strong>
+                    <strong>Say hello to {String(activeConversation.name || 'your friend').split(' ')[0]}</strong>
                     <span>This is the beginning of your conversation.</span>
                   </div>
                 ) : activeConversation.messages.filter((message) => !messageSearch.trim() || (message.text || message.fileName || '').toLowerCase().includes(messageSearch.trim().toLowerCase())).length === 0 ? (
