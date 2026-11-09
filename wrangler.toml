@@ -6,4 +6,4 @@ workers_dev = true
 [vars]
 FIREBASE_PROJECT_ID = "notification-32ea1"
 IMAGEKIT_URL_ENDPOINT = "https://ik.imagekit.io/wqltaezb3"
-ALLOWED_ORIGINS = "http://localhost:5173,https://notification-32ea1.web.app,https://notification-32ea1.firebaseapp.com"
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://notification-32ea1.web.app,https://notification-32ea1.firebaseapp.com"
