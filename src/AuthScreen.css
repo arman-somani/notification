@@ -56,3 +56,40 @@
 .auth-back-button { display:inline-flex; margin:0 0 24px; padding:0; border:0; background:transparent; color:#777; font:inherit; font-size:12px; font-weight:650; cursor:pointer; }
 .auth-back-button:hover { color:#171717; }
 :root[data-theme="dark"] .auth-back-button:hover { color:#f1f1ef; }
+
+
+/* Keep authentication and profile setup typography aligned with the chat app. */
+.auth-page { font-family: 'DM Sans', Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+.auth-card { font-size: 14px; }
+.auth-form label { font-size: 13px; line-height: 1.45; }
+.auth-form input, .auth-form button { font-family: inherit; font-size: 14px; }
+.auth-eyebrow, .auth-form small, .auth-footnote, .auth-footnote code,
+.auth-missing-list code, .auth-switch, .auth-message, .auth-loading { font-size: 11px; line-height: 1.5; }
+
+
+.auth-google-button {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  margin: 0 0 17px;
+  border: 1px solid #dededb;
+  border-radius: 10px;
+  background: #fff;
+  color: #202124;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.auth-google-button svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.auth-google-button:hover:not(:disabled) { background: #f8f9fa; border-color: #b9b9b5; box-shadow: 0 2px 7px rgba(0,0,0,.07); }
+.auth-google-button:disabled { opacity: .55; cursor: wait; }
+:root[data-theme="dark"] .auth-google-button { background: #20201f; border-color: #393937; color: #f1f1ef; }
+:root[data-theme="dark"] .auth-google-button:hover:not(:disabled) { background: #292927; }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 0 0 17px; color: #92928d; font-size: 9px; font-weight: 800; letter-spacing: 1.1px; }
+.auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: #e6e6e2; }
+:root[data-theme="dark"] .auth-divider::before, :root[data-theme="dark"] .auth-divider::after { background: #393937; }
