@@ -9,7 +9,7 @@ const formatDate = (value) => {
   return value.toDate().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onBack }) {
   const [stats, setStats] = useState({ users: null, reports: null, announcements: null })
   const [announcements, setAnnouncements] = useState([])
   const [title, setTitle] = useState('')
@@ -75,6 +75,7 @@ export default function AdminDashboard() {
 
   return (
     <section className="admin-page">
+      {onBack && <button type="button" className="admin-mobile-back" onClick={onBack}>← Back to chats</button>}
       <header className="admin-page-header">
         <div>
           <div className="eyebrow">CONVERLY CONTROL</div>
