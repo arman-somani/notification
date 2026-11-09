@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
@@ -358,13 +359,14 @@ function VoiceMessagePlayer({ src, className = '' }) {
 
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
 
-function App({ profile, onLogout }) {
+function App({ profile }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
     try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
   })
   const [activeId, setActiveId] = useState('alex')
   const [view, setView] = useState('messages')
+  const [loggingOut, setLoggingOut] = useState(false)
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
   const [messageText, setMessageText] = useState('')
@@ -665,6 +667,27 @@ function App({ profile, onLogout }) {
     setToast(message)
     window.clearTimeout(showToast.timeout)
     showToast.timeout = window.setTimeout(() => setToast(''), 2600)
+  }
+
+  const handleLogout = async () => {
+    if (!auth || !auth.currentUser || loggingOut) {
+      if (!auth?.currentUser) showToast('No active account is signed in.')
+      return
+    }
+    setLoggingOut(true)
+    try {
+      await signOut(auth)
+      localStorage.removeItem('notification-conversations')
+      setConversations([])
+      setActiveId('')
+      setView('messages')
+      setMobileChatOpen(false)
+      setProfileMenuOpen(false)
+    } catch (error) {
+      showToast(error?.message || 'Could not log out. Please try again.')
+    } finally {
+      setLoggingOut(false)
+    }
   }
 
   const openAvatarPicker = () => {
@@ -1179,7 +1202,7 @@ function App({ profile, onLogout }) {
               <strong>{profileName}</strong>
               <span>Available</span>
               <span className="profile-avatar-lock"><Icon name="shield" size={13} /> Preset profile avatar</span>
-              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button>{onLogout && <button onClick={onLogout}><Icon name="logout" size={14} /> Sign out</button>}
+              <button onClick={() => { setView('settings'); setProfileMenuOpen(false) }}>Account settings</button><button onClick={handleLogout} disabled={loggingOut}><Icon name="logout" size={14} /> {loggingOut ? 'Signing out…' : 'Sign out'}</button>
             </div>
           )}
         </div>
@@ -1299,6 +1322,16 @@ function App({ profile, onLogout }) {
               <p>Make Notification feel like yours.</p>
             </div>
             <div className="settings-content">
+              <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
+                <div className="setting-row">
+                  <span className="setting-icon"><Icon name="logout" /></span>
+                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
+                  <button className="settings-logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
+                    <Icon name="logout" size={15} /> {loggingOut ? 'Logging out…' : 'Log out'}
+                  </button>
+                </div>
+              </div>
               <AccountPrivacyPanel />
               <div className="settings-section">
                 <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
@@ -1335,27 +1368,6 @@ function App({ profile, onLogout }) {
                   <span className="setting-icon"><Icon name="shield" /></span>
                   <span className="setting-copy"><strong>Security center</strong><small>Authentication and privacy controls will be available here</small></span>
                   <span className="coming-soon">COMING SOON</span>
-                </div>
-              </div>
-              <div className="settings-section settings-account-actions">
-                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
-                <div className="setting-row">
-                  <span className="setting-icon"><Icon name="log-out" /></span>
-                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
-                  <button
-                    className="settings-logout-button"
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await onLogout?.()
-                      } catch (error) {
-                        showToast(error?.message || 'Could not log out. Please try again.')
-                      }
-                    }}
-                    disabled={!onLogout}
-                  >
-                    <Icon name="log-out" size={15} /> Log out
-                  </button>
                 </div>
               </div>
               <div className="demo-note"><Icon name="info" size={16} /><span>Phase 1 preview: preferences are stored locally in this browser. Account sync will arrive with the Firebase integration.</span></div>
