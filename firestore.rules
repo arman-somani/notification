@@ -149,7 +149,9 @@ service cloud.firestore {
         );
       allow update: if isConversationMember(conversationId)
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview']);
+          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview', 'lastMessageSenderId'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageSenderId'])
+          || request.resource.data.lastMessageSenderId == request.auth.uid);
       allow delete: if false;
 
       match /members/{uid} {

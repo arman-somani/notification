@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
@@ -361,10 +362,14 @@ const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__'
 function App({ profile, onLogout }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
+    // Authenticated accounts must never see sample conversations or another
+    // browser's cached conversation data as if it were real chat history.
+    if (auth?.currentUser?.uid) return []
     try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
   })
-  const [activeId, setActiveId] = useState('alex')
+  const [activeId, setActiveId] = useState(() => auth?.currentUser?.uid ? '' : 'alex')
   const [view, setView] = useState('messages')
+  const [loggingOut, setLoggingOut] = useState(false)
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
   const [messageText, setMessageText] = useState('')
@@ -497,7 +502,7 @@ function App({ profile, onLogout }) {
   }, [auth?.currentUser?.uid])
 
   useEffect(() => {
-    if ((!showNewChat && !showFriendRequests) || !auth?.currentUser || !db) return undefined
+    if (!auth?.currentUser || !db) return undefined
     let cancelled = false
     const loadPeopleAndRequests = async () => {
       setDiscoveryLoading(true)
@@ -527,7 +532,7 @@ function App({ profile, onLogout }) {
           return { id: contactUid, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
-        if (usernameTerm.length >= 3) {
+        if (showNewChat && usernameTerm.length >= 3) {
           const peopleSnapshot = await getDocs(query(
             collection(db, 'users'),
             where('username', '>=', usernameTerm),
@@ -543,9 +548,27 @@ function App({ profile, onLogout }) {
             })
         }
         if (!cancelled) {
+          const validContacts = contacts.filter(Boolean)
           setOutgoingFriendRequests(outgoing)
-          setFriendContacts(contacts.filter(Boolean))
+          setFriendContacts(validContacts)
           setDiscoveredUsers(matches)
+          // Keep the inbox backed by accepted Firebase friendships, not demo data.
+          setConversations((current) => {
+            const byId = new Map(current.map((item) => [item.id, item]))
+            validContacts.forEach((person) => {
+              if (!byId.has(person.id)) byId.set(person.id, {
+                ...person,
+                preview: 'Start a conversation',
+                time: '',
+                unread: 0,
+                pinned: false,
+                favorite: false,
+                archived: false,
+                messages: [],
+              })
+            })
+            return [...byId.values()]
+          })
         }
       } catch (error) {
         if (!cancelled) setDiscoveryError(error?.code === 'permission-denied'
@@ -557,7 +580,7 @@ function App({ profile, onLogout }) {
     }
     loadPeopleAndRequests()
     return () => { cancelled = true }
-  }, [showNewChat, showFriendRequests, newChatSearch])
+  }, [showNewChat, showFriendRequests, newChatSearch, auth?.currentUser?.uid])
 
 
   useEffect(() => {
@@ -601,7 +624,7 @@ function App({ profile, onLogout }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  const activeConversation = conversations.find((conversation) => conversation.id === activeId)
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
@@ -643,6 +666,32 @@ function App({ profile, onLogout }) {
     })
     return unsubscribe
   }, [activeId, friendContacts, auth?.currentUser?.uid])
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || friendContacts.length === 0) return undefined
+    const unsubscribers = friendContacts.map((person) => {
+      const conversationId = directConversationId(uid, person.id)
+      return onSnapshot(doc(db, 'conversations', conversationId), (snapshot) => {
+        if (!snapshot.exists()) return
+        const data = snapshot.data()
+        const lastMessageAt = data.lastMessageAt?.toDate ? data.lastMessageAt.toDate() : null
+        setConversations((items) => items.map((item) => item.id === person.id ? {
+          ...item,
+          firebaseConversationId: conversationId,
+          preview: data.lastMessagePreview || item.preview || 'Start a conversation',
+          time: lastMessageAt ? lastMessageAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
+          lastActivityAt: lastMessageAt ? lastMessageAt.getTime() : item.lastActivityAt || 0,
+          unread: activeId === person.id || data.lastMessageSenderId === uid
+            ? 0
+            : data.lastMessageSenderId ? Math.max(1, item.unread || 0) : item.unread,
+        } : item))
+      }, (error) => {
+        if (error?.code !== 'permission-denied') showToast(error?.message || 'Could not update the inbox.')
+      })
+    })
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts, activeId, auth?.currentUser?.uid])
+
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
     ...friendContacts.filter((person) => !conversations.some((item) => item.id === person.id)),
@@ -660,6 +709,23 @@ function App({ profile, onLogout }) {
     if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
     return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
   }, [conversations, directory, listFilter, search, view])
+
+  const handleLogout = async () => {
+    if (!auth || !auth.currentUser || loggingOut) return
+    setLoggingOut(true)
+    try {
+      await signOut(auth)
+      localStorage.removeItem('notification-conversations')
+      setConversations([])
+      setActiveId('')
+      setView('messages')
+      setMobileChatOpen(false)
+    } catch (error) {
+      showToast(error?.message || 'Could not log out. Please try again.')
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   const showToast = (message) => {
     setToast(message)
@@ -741,11 +807,31 @@ function App({ profile, onLogout }) {
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
 
+    // Clear the controlled composer immediately after accepting the send action.
+    // If Firebase rejects the write, restore the text unless the user has already
+    // started composing a newer message.
+    setMessageText('')
     const uid = auth?.currentUser?.uid
     const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
     if (isAcceptedFriend) {
       const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
       try {
+        // A conversation document must exist before either member can read or
+        // write its messages. Repair older/missing conversations on first send.
+        await runTransaction(db, async (transaction) => {
+          const conversationRef = doc(db, 'conversations', conversationId)
+          const snapshot = await transaction.get(conversationRef)
+          if (!snapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, activeId].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+            throw new Error('This conversation does not have the expected members.')
+          }
+        })
         const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
         await setDoc(messageRef, {
           senderId: uid,
@@ -757,12 +843,15 @@ function App({ profile, onLogout }) {
         await setDoc(doc(db, 'conversations', conversationId), {
           lastMessageAt: serverTimestamp(),
           lastMessagePreview: text.slice(0, 160),
+          lastMessageSenderId: uid,
           updatedAt: serverTimestamp(),
         }, { merge: true })
-        setMessageText('')
+        // The composer was already cleared before the async write started.
+        // Do not clear it again here: the user may have started a new draft.
         setReplyTarget(null)
         messageInputRef.current?.focus()
       } catch (error) {
+        setMessageText((current) => current.trim() ? current : text)
         showToast(error?.code === 'permission-denied'
           ? 'Firebase denied this message. Check that the latest Firestore rules are deployed.'
           : error?.message || 'Could not send message. Please try again.')
@@ -1240,15 +1329,16 @@ function App({ profile, onLogout }) {
 
         {view !== 'archive' && view !== 'starred' && (
           <div className="online-section">
-            <div className="section-label"><span>ONLINE NOW</span><span className="online-count">04</span></div>
+            <div className="section-label"><span>YOUR FRIENDS</span><span className="online-count">{friendContacts.length}</span></div>
             <div className="online-people">
-              {[initialConversations[0], initialConversations[1], initialConversations[3], directoryPeople[2]].map((person) => (
+              {friendContacts.slice(0, 4).map((person) => (
                 <button className="online-person" key={person.id} onClick={() => startConversation(person)} title={person.name}>
                   <Avatar person={person} size="online" showStatus />
                   <span>{person.name.split(' ')[0]}</span>
                 </button>
               ))}
-              <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+3</button>
+              {friendContacts.length > 4 && <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+{friendContacts.length - 4}</button>}
+              {friendContacts.length === 0 && <span className="online-empty">Your accepted friends will appear here.</span>}
             </div>
           </div>
         )}
@@ -1267,7 +1357,7 @@ function App({ profile, onLogout }) {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => view === 'contacts' ? startConversation(conversation) : selectConversation(conversation.id)} />
+              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
             ))}
           </div>
         </div>
@@ -1299,7 +1389,7 @@ function App({ profile, onLogout }) {
               <p>Make Notification feel like yours.</p>
             </div>
             <div className="settings-content">
-              <AccountPrivacyPanel />
+              <AccountPrivacyPanel profile={profile} />
               <div className="settings-section">
                 <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
                 <div className="setting-row">
@@ -1337,7 +1427,17 @@ function App({ profile, onLogout }) {
                   <span className="coming-soon">COMING SOON</span>
                 </div>
               </div>
-              <div className="demo-note"><Icon name="info" size={16} /><span>Phase 1 preview: preferences are stored locally in this browser. Account sync will arrive with the Firebase integration.</span></div>
+              <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
+                <div className="setting-row">
+                  <span className="setting-icon"><Icon name="logout" /></span>
+                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
+                  <button className="settings-logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
+                    <Icon name="logout" size={15} /> {loggingOut ? 'Logging out…' : 'Log out'}
+                  </button>
+                </div>
+              </div>
+              <div className="demo-note"><Icon name="info" size={16} /><span>Profile and privacy settings sync to your account. Appearance, sound and compact-view preferences stay on this device.</span></div>
             </div>
           </section>
         ) : activeConversation ? (
@@ -1549,7 +1649,7 @@ function App({ profile, onLogout }) {
                 </span>}
                 {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Text messages sync across devices</span></div>
             </form>
           </section>
         ) : (

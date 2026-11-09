@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { auth, db } from './firebase/client'
 
 const readList = (key) => {
   try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] }
 }
 
-export default function AccountPrivacyPanel() {
-  const [displayName, setDisplayName] = useState(() => localStorage.getItem('notification-display-name') || 'Your workspace')
-  const [username, setUsername] = useState(() => localStorage.getItem('notification-username') || 'notification_user')
-  const [usernameLocked, setUsernameLocked] = useState(() => localStorage.getItem('notification-username-locked') === 'true' || Boolean(localStorage.getItem('notification-username')))
-  const [bio, setBio] = useState(() => localStorage.getItem('notification-bio') || '')
-  const [messagePrivacy, setMessagePrivacy] = useState(() => localStorage.getItem('notification-message-privacy') || 'everyone')
-  const [lastSeenPrivacy, setLastSeenPrivacy] = useState(() => localStorage.getItem('notification-last-seen-privacy') || 'contacts')
-  const [groupInvitePrivacy, setGroupInvitePrivacy] = useState(() => localStorage.getItem('notification-group-invite-privacy') || 'contacts')
-  const [discoverable, setDiscoverable] = useState(() => localStorage.getItem('notification-discoverable') !== 'false')
+export default function AccountPrivacyPanel({ profile }) {
+  const [displayName, setDisplayName] = useState(() => profile?.displayName || localStorage.getItem('notification-display-name') || 'Your workspace')
+  const [username, setUsername] = useState(() => profile?.username || localStorage.getItem('notification-username') || 'notification_user')
+  const [usernameLocked, setUsernameLocked] = useState(() => Boolean(profile?.username) || localStorage.getItem('notification-username-locked') === 'true' || Boolean(localStorage.getItem('notification-username')))
+  const [bio, setBio] = useState(() => profile?.bio || localStorage.getItem('notification-bio') || '')
+  const [messagePrivacy, setMessagePrivacy] = useState(() => profile?.privacy?.whoCanMessage || localStorage.getItem('notification-message-privacy') || 'everyone')
+  const [lastSeenPrivacy, setLastSeenPrivacy] = useState(() => profile?.privacy?.whoCanSeeLastSeen || localStorage.getItem('notification-last-seen-privacy') || 'contacts')
+  const [groupInvitePrivacy, setGroupInvitePrivacy] = useState(() => profile?.privacy?.whoCanAddToGroups || localStorage.getItem('notification-group-invite-privacy') || 'contacts')
+  const [discoverable, setDiscoverable] = useState(() => profile?.privacy?.discoverable ?? (localStorage.getItem('notification-discoverable') !== 'false'))
   const [blockedHandles, setBlockedHandles] = useState(() => readList('notification-blocked-handles'))
   const [blockedInput, setBlockedInput] = useState('')
   const [notice, setNotice] = useState('')
@@ -20,6 +22,18 @@ export default function AccountPrivacyPanel() {
   const [reportReason, setReportReason] = useState('spam')
   const [reportDetails, setReportDetails] = useState('')
   const [reports, setReports] = useState(() => readList('notification-local-reports'))
+
+  useEffect(() => {
+    if (!profile) return
+    setDisplayName(profile.displayName || 'Your workspace')
+    setUsername(profile.username || 'notification_user')
+    setUsernameLocked(Boolean(profile.username))
+    setBio(profile.bio || '')
+    setMessagePrivacy(profile.privacy?.whoCanMessage || 'everyone')
+    setLastSeenPrivacy(profile.privacy?.whoCanSeeLastSeen || 'contacts')
+    setGroupInvitePrivacy(profile.privacy?.whoCanAddToGroups || 'contacts')
+    setDiscoverable(profile.privacy?.discoverable ?? true)
+  }, [profile])
 
   useEffect(() => {
     localStorage.setItem('notification-message-privacy', messagePrivacy)
@@ -30,36 +44,69 @@ export default function AccountPrivacyPanel() {
     localStorage.setItem('notification-local-reports', JSON.stringify(reports))
   }, [messagePrivacy, lastSeenPrivacy, groupInvitePrivacy, discoverable, blockedHandles, reports])
 
-  const saveProfile = () => {
-    const normalized = usernameLocked
-      ? (localStorage.getItem('notification-username') || username).toLowerCase()
-      : username.trim().toLowerCase().replace(/^@/, '')
+  const saveProfile = async () => {
+    const normalized = (profile?.username || username).trim().toLowerCase().replace(/^@/, '')
     const cleanDisplayName = displayName.trim()
     if (!cleanDisplayName) {
       setNotice('Please enter a display name.')
       return
     }
     if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
-      setNotice('Username must be 3–20 characters using letters, numbers or underscores.')
+      setNotice('Your account username is invalid. Please contact support.')
       return
     }
-    const previousUsername = (localStorage.getItem('notification-username') || 'notification_user').toLowerCase()
-    const reserved = readList('notification-username-registry').map((item) => String(item).toLowerCase())
-    if (reserved.includes(normalized) && normalized !== previousUsername) {
-      setNotice('That username is already used on this device. Choose another one.')
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) {
+      setNotice('Your account is not connected. Sign in again and retry.')
       return
     }
-    const nextRegistry = [...new Set([...reserved.filter((item) => item !== previousUsername), normalized])]
-    localStorage.setItem('notification-username-registry', JSON.stringify(nextRegistry))
-    localStorage.setItem('notification-display-name', cleanDisplayName)
-    localStorage.setItem('notification-username', normalized)
-    localStorage.setItem('notification-username-locked', 'true')
-    localStorage.setItem('notification-bio', bio.trim())
-    setDisplayName(cleanDisplayName)
-    setUsername(normalized)
-    setUsernameLocked(true)
-    window.dispatchEvent(new CustomEvent('notification-profile-updated', { detail: { displayName: cleanDisplayName, username: normalized } }))
-    setNotice('Profile saved successfully on this device.')
+    try {
+      const privacy = {
+        whoCanMessage: messagePrivacy,
+        whoCanSeeLastSeen: lastSeenPrivacy,
+        whoCanAddToGroups: groupInvitePrivacy,
+        discoverable,
+      }
+      await updateDoc(doc(db, 'users', uid), {
+        displayName: cleanDisplayName,
+        bio: bio.trim(),
+        privacy,
+        updatedAt: serverTimestamp(),
+      })
+      localStorage.setItem('notification-display-name', cleanDisplayName)
+      localStorage.setItem('notification-username', normalized)
+      localStorage.setItem('notification-username-locked', 'true')
+      localStorage.setItem('notification-bio', bio.trim())
+      setDisplayName(cleanDisplayName)
+      setUsername(normalized)
+      setUsernameLocked(true)
+      window.dispatchEvent(new CustomEvent('notification-profile-updated', { detail: { displayName: cleanDisplayName, username: normalized } }))
+      setNotice('Profile and privacy settings saved to your account.')
+    } catch (error) {
+      setNotice(error?.message || 'Could not save your profile. Please try again.')
+    }
+  }
+
+  const savePrivacySettings = async () => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) {
+      setNotice('Your account is not connected. Sign in again and retry.')
+      return
+    }
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        privacy: {
+          whoCanMessage: messagePrivacy,
+          whoCanSeeLastSeen: lastSeenPrivacy,
+          whoCanAddToGroups: groupInvitePrivacy,
+          discoverable,
+        },
+        updatedAt: serverTimestamp(),
+      })
+      setNotice('Privacy settings saved to your account.')
+    } catch (error) {
+      setNotice(error?.message || 'Could not save privacy settings. Please try again.')
+    }
   }
 
   const addBlockedHandle = () => {
@@ -102,6 +149,7 @@ export default function AccountPrivacyPanel() {
         <label className="account-field">Who can add me to groups<select value={groupInvitePrivacy} onChange={(event) => setGroupInvitePrivacy(event.target.value)}><option value="everyone">Everyone</option><option value="contacts">Contacts only</option><option value="nobody">Nobody</option></select></label>
       </div>
       <label className="account-discoverability"><input type="checkbox" checked={discoverable} onChange={(event) => setDiscoverable(event.target.checked)} /> Allow people to find me by username</label>
+      <div className="account-panel-actions"><button className="secondary-button" type="button" onClick={savePrivacySettings}>Save privacy settings</button></div>
       <div className="account-divider" />
       <div className="account-subheading"><strong>Blocked usernames</strong><span>Blocked accounts cannot contact you once server enforcement is connected.</span></div>
       <div className="account-inline-input"><input value={blockedInput} onChange={(event) => setBlockedInput(event.target.value)} placeholder="Enter username to block" /><button className="secondary-button" onClick={addBlockedHandle}>Block</button></div>
@@ -117,7 +165,7 @@ export default function AccountPrivacyPanel() {
       {reports.length > 0 && <div className="local-story-list"><strong>Reports saved on this device</strong>{reports.slice(0, 5).map((report) => <div key={report.id}><span>@{report.target} · {report.reason}</span><small>{new Date(report.createdAt).toLocaleString()} · {report.status}</small></div>)}</div>}
       <div className="verified-note"><span className="verified-label">✓ Verified accounts</span> are assigned by administrators after review. Verification cannot be self-selected.</div>
       {notice && <p className="account-notice" role="status">{notice}</p>}
-      <p className="account-security-note">These settings currently stay in this browser. Firebase Authentication, global username reservations, user discovery, report delivery/review, blocking, contact privacy and verified badges still need trusted server-side enforcement before public launch.</p>
+      <p className="account-security-note">Your display name, bio and privacy preferences sync to your Firebase account. Blocking, report delivery/review and verified badges still require trusted server-side enforcement.</p>
     </section>
   )
 }
