@@ -746,6 +746,20 @@ function App({ profile, isAdmin = false }) {
     const text = messageText.trim()
     if (!text || !activeConversation) return
     if (activeConversation.blocked) { showToast('Unblock this user before sending messages.'); return }
+    const currentUid = auth?.currentUser?.uid
+    if (currentUid && db && friendContacts.some((person) => person.id === activeId)) {
+      try {
+        const [myBlock, theirBlock] = await Promise.all([
+          getDoc(doc(db, 'users', currentUid, 'blocks', activeId)),
+          getDoc(doc(db, 'users', activeId, 'blocks', currentUid)),
+        ])
+        if (myBlock.exists()) { showToast('You blocked this user. Unblock them before sending messages.'); return }
+        if (theirBlock.exists()) { showToast('You cannot send messages because this user has blocked you.'); return }
+      } catch (error) {
+        showToast(error?.code === 'permission-denied' ? 'Could not verify this chat’s block status. Please try again.' : error?.message || 'Could not verify this chat. Please try again.')
+        return
+      }
+    }
     if (editingMessageId) {
       setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
