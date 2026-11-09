@@ -21,6 +21,15 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
     }
 
+    function isBlockedBetweenMembers(conversationId) {
+      let members = get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
+      return members.size() == 2
+        && (
+          exists(/databases/$(database)/documents/users/$(members[0])/blocks/$(members[1]))
+          || exists(/databases/$(database)/documents/users/$(members[1])/blocks/$(members[0]))
+        );
+    }
+
     function isAcceptedFriend(otherUid) {
       let outgoingRequest = /databases/$(database)/documents/friendRequests/$(request.auth.uid + '_' + otherUid);
       let incomingRequest = /databases/$(database)/documents/friendRequests/$(otherUid + '_' + request.auth.uid);
@@ -66,7 +75,15 @@ service cloud.firestore {
       }
 
       match /blocks/{blockedUid} {
-        allow read, write: if signedIn() && request.auth.uid == uid;
+        // The account owner manages their block list; the blocked account may
+        // check its own block status so the UI can disable messaging.
+        allow get: if signedIn() && (request.auth.uid == uid || request.auth.uid == blockedUid);
+        allow list: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.uid == blockedUid
+          && request.resource.data.username is string;
+        allow delete: if signedIn() && request.auth.uid == uid;
       }
 
       match /devices/{deviceId} {
@@ -167,6 +184,7 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isConversationMember(conversationId);
         allow create: if isConversationMember(conversationId)
+          && !isBlockedBetweenMembers(conversationId)
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
           && request.resource.data.type in ['text', 'image']
