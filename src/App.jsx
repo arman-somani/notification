@@ -1220,7 +1220,6 @@ function App({ profile, isAdmin = false }) {
 
   const deleteChat = async () => {
     if (!activeConversation) return
-    const chatName = activeConversation.name || 'this chat'
     if (!window.confirm('Delete this chat from your inbox? This only removes it for you. The other person will keep their messages.')) return
     const uid = auth?.currentUser?.uid
     const conversationId = activeConversation.firebaseConversationId || (
