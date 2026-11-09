@@ -34,7 +34,7 @@ export default function AdminDashboard() {
       setAnnouncements(latest)
     } catch (caught) {
       setError(caught?.code === 'permission-denied'
-        ? 'Firebase denied admin access. Confirm this account has the admin claim and deploy the latest Firestore rules.'
+        ? 'Firebase denied admin access. Confirm this account is verified and the latest Firestore rules are deployed.'
         : caught?.message || 'Could not load the admin dashboard.')
     } finally {
       setLoading(false)
