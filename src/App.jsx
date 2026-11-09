@@ -674,7 +674,7 @@ function App({ profile, isAdmin = false }) {
   ], [conversations, friendContacts])
 
   const visibleConversations = useMemo(() => {
-    let items = conversations.filter((item) => !deletedChatIds.includes(item.firebaseConversationId || (item.status === 'group' ? item.id : directConversationId(auth?.currentUser?.uid || '', item.id)))
+    let items = conversations.filter((item) => !deletedChatIds.includes(item.firebaseConversationId || (item.status === 'group' ? item.id : directConversationId(auth?.currentUser?.uid || '', item.id))))
     if (view === 'starred') items = items.filter((item) => item.favorite && !item.archived)
     else if (view === 'archive') items = items.filter((item) => item.archived)
     else if (view === 'contacts') items = directory
