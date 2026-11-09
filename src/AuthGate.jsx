@@ -55,7 +55,7 @@ export default function AuthGate() {
     return (
       <main className="auth-page">
         <section className="auth-card">
-          <div className="auth-brand"><span className="auth-brand-mark">N</span><span>notification<span>.</span></span></div>
+          <div className="auth-brand"><span className="auth-brand-mark">C</span><span>converly<span>.</span></span></div>
           <p className="auth-eyebrow">LOCAL CONFIGURATION REQUIRED</p>
           <h1>Connect your Firebase project</h1>
           <p className="auth-description">The app is ready for authentication, but these local environment values are missing:</p>
