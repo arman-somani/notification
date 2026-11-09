@@ -139,15 +139,20 @@ function ConversationIdentity({ person, subtitle, subtitleClass = '', size = 'he
   )
 }
 
-function ConversationListItem({ conversation, active, onSelect }) {
+function ConversationListItem({ conversation, active, onSelect, onDelete, deleting = false }) {
   return (
-    <button type="button" className={'conversation-item' + (active ? ' active' : '')} onClick={onSelect}>
-      <Avatar person={conversation} size="lg" showStatus />
-      <span className="conversation-copy">
-        <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
-        <span className="conversation-bottomline"><span className="conversation-preview">{conversation.preview}</span>{conversation.unread > 0 && <i className="unread-count">{conversation.unread}</i>}</span>
-      </span>
-    </button>
+    <div className={'conversation-item-wrap' + (active ? ' active' : '')}>
+      <button type="button" className={'conversation-item' + (active ? ' active' : '')} onClick={onSelect}>
+        <Avatar person={conversation} size="lg" showStatus />
+        <span className="conversation-copy">
+          <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
+          <span className="conversation-bottomline"><span className="conversation-preview">{conversation.preview}</span>{conversation.unread > 0 && <i className="unread-count">{conversation.unread}</i>}</span>
+        </span>
+      </button>
+      <button type="button" className="conversation-delete-button" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={deleting} aria-label={`Delete chat with ${conversation.name}`} title="Delete chat">
+        <Icon name="trash" size={15} />
+      </button>
+    </div>
   )
 }
 
@@ -229,6 +234,8 @@ function App({ profile, isAdmin = false }) {
   const canAccessAdmin = isAdmin && isDesignatedAdminEmail(auth?.currentUser?.email) && auth?.currentUser?.emailVerified === true
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState([])
+  const [hiddenConversationIds, setHiddenConversationIds] = useState([])
+  const [deletingConversationId, setDeletingConversationId] = useState('')
   const [activeId, setActiveId] = useState('')
   const [view, setView] = useState('messages')
   const [loggingOut, setLoggingOut] = useState(false)
@@ -321,6 +328,16 @@ function App({ profile, isAdmin = false }) {
     window.addEventListener('notification-profile-updated', syncProfile)
     return () => window.removeEventListener('notification-profile-updated', syncProfile)
   }, [])
+
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return undefined
+    return onSnapshot(collection(db, 'users', uid, 'inbox'), (snapshot) => {
+      setHiddenConversationIds(snapshot.docs.filter((item) => item.data().hidden === true).map((item) => item.id))
+    }, (error) => {
+      showToast(error?.message || 'Could not sync your hidden chats.')
+    })
+  }, [auth?.currentUser?.uid])
 
   useEffect(() => {
     const uid = auth?.currentUser?.uid
@@ -599,8 +616,43 @@ function App({ profile, isAdmin = false }) {
     if (listFilter === 'unread') items = items.filter((item) => item.unread > 0)
     const query = search.trim().toLowerCase()
     if (query) items = items.filter((item) => String(item.name || 'Converly user').toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
+    const uid = auth?.currentUser?.uid
+    items = items.filter((item) => !hiddenConversationIds.includes(item.firebaseConversationId || (uid && item.id ? directConversationId(uid, item.id) : item.id)))
     return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
-  }, [conversations, directory, listFilter, search, view])
+  }, [conversations, directory, hiddenConversationIds, listFilter, search, view])
+
+  const deleteConversation = async (conversation) => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || !conversation?.id || deletingConversationId) return
+    const conversationId = conversation.firebaseConversationId || directConversationId(uid, conversation.id)
+    setDeletingConversationId(conversationId)
+    try {
+      // Ensure an empty accepted-friend chat has a member-verified parent before writing its private inbox marker.
+      if (friendContacts.some((person) => person.id === conversation.id)) {
+        await runTransaction(db, async (transaction) => {
+          const conversationRef = doc(db, 'conversations', conversationId)
+          const snapshot = await transaction.get(conversationRef)
+          if (!snapshot.exists()) {
+            transaction.set(conversationRef, { createdBy: uid, memberIds: [uid, conversation.id].sort(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+          } else if (!snapshot.data().memberIds?.includes(uid)) {
+            throw new Error('You are not a member of this conversation.')
+          }
+        })
+        await setDoc(doc(db, 'users', uid, 'inbox', conversationId), { hidden: true, otherUid: conversation.id, updatedAt: serverTimestamp() }, { merge: true })
+        setHiddenConversationIds((ids) => ids.includes(conversationId) ? ids : [...ids, conversationId])
+      }
+      setConversations((items) => items.filter((item) => item.id !== conversation.id))
+      if (activeId === conversation.id) {
+        setActiveId('')
+        setMobileChatOpen(false)
+      }
+      showToast('Chat deleted from your inbox. The other person still has their chat.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firebase denied this action. Check the latest Firestore rules.' : error?.message || 'Could not delete this chat.')
+    } finally {
+      setDeletingConversationId('')
+    }
+  }
 
   const handleLogout = async () => {
     if (!auth || !auth.currentUser || loggingOut) return
@@ -1238,6 +1290,7 @@ function App({ profile, isAdmin = false }) {
           throw new Error('This conversation does not have the expected members.')
         }
       })
+      await setDoc(doc(db, 'users', uid, 'inbox', conversationId), { hidden: false, otherUid: person.id, updatedAt: serverTimestamp() }, { merge: true })
       const existing = conversations.find((item) => item.id === person.id)
       if (existing) {
         setConversations((items) => items.map((item) => item.id === person.id ? { ...item, firebaseConversationId: conversationId } : item))
@@ -1391,7 +1444,7 @@ function App({ profile, isAdmin = false }) {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
+              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} deleting={deletingConversationId === (conversation.firebaseConversationId || directConversationId(auth?.currentUser?.uid || '', conversation.id))} onDelete={() => deleteConversation(conversation)} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
             ))}
           </div>
         </div>
