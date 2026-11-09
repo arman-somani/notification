@@ -1,7 +1,7 @@
 # View-once image security design
 
 ## Required behavior
-Every image sent in Notification is automatically view-once; there is no toggle or normal-image mode. The sender sees their sent image in their own chat, but that does not consume the recipient's open. The recipient sees a locked preview and must explicitly open it. On the first successful open, it is consumed and cannot be opened again from Notification.
+Every image sent in Converly is automatically view-once; there is no toggle or normal-image mode. The sender sees their sent image in their own chat, but that does not consume the recipient's open. The recipient sees a locked preview and must explicitly open it. On the first successful open, it is consumed and cannot be opened again from Converly.
 
 ## Do not use a permanent Storage URL
 Hiding an image after rendering it, deleting a React component, or changing localStorage is not security. A client can replay requests and a permanent download URL can be reused.
