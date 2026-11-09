@@ -1389,6 +1389,16 @@ function App({ profile }) {
               <p>Make Notification feel like yours.</p>
             </div>
             <div className="settings-content">
+              <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
+                <div className="setting-row">
+                  <span className="setting-icon"><Icon name="logout" /></span>
+                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
+                  <button className="settings-logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
+                    <Icon name="logout" size={15} /> {loggingOut ? 'Logging out…' : 'Log out'}
+                  </button>
+                </div>
+              </div>
               <AccountPrivacyPanel profile={profile} />
               <div className="settings-section">
                 <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
@@ -1425,16 +1435,6 @@ function App({ profile }) {
                   <span className="setting-icon"><Icon name="shield" /></span>
                   <span className="setting-copy"><strong>Security center</strong><small>Authentication and privacy controls will be available here</small></span>
                   <span className="coming-soon">COMING SOON</span>
-                </div>
-              </div>
-              <div className="settings-section settings-account-actions">
-                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
-                <div className="setting-row">
-                  <span className="setting-icon"><Icon name="logout" /></span>
-                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
-                  <button className="settings-logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
-                    <Icon name="logout" size={15} /> {loggingOut ? 'Logging out…' : 'Log out'}
-                  </button>
                 </div>
               </div>
               <div className="demo-note"><Icon name="info" size={16} /><span>Profile and privacy settings sync to your account. Appearance, sound and compact-view preferences stay on this device.</span></div>
