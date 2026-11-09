@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { signOut } from 'firebase/auth'
+import { getIdToken, signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
@@ -629,6 +629,9 @@ function App({ profile, isAdmin = false }) {
           senderId: data.senderId,
           type: data.type || 'text',
           text: data.text || '',
+          attachmentPath: data.attachmentPath || '',
+          viewOnce: data.viewOnce === true,
+          viewed: data.senderId !== uid && Boolean(data.viewedByUid),
           replyToId: data.replyToId,
           replyToText: data.replyToText,
           editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
@@ -640,7 +643,7 @@ function App({ profile, isAdmin = false }) {
         const exists = items.some((item) => item.id === activeId)
         if (!exists) return items
         return items.map((item) => item.id === activeId
-          ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1]?.text || 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
+          ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1] ? (messages[messages.length - 1].type === 'image' ? 'Photo' : messages[messages.length - 1].text || 'Message') : 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
           : item)
       })
     }, (error) => {
@@ -808,19 +811,163 @@ function App({ profile, isAdmin = false }) {
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
-  const handleFile = (event) => {
-    const file = event.target.files?.[0]
-    if (!file || !activeConversation) return
-    event.target.value = ''
-    if (!file.type.startsWith('image/')) { showToast('Only image sharing is available here'); return }
-    if (file.size > 3 * 1024 * 1024) { showToast('Choose an image smaller than 3 MB'); return }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const message = { id: 'img-' + Date.now(), from: 'me', type: 'image', imageData: reader.result, viewOnce: true, viewed: false, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: 'View-once image', time: 'Now', lastActivityAt: Date.now() } : item))
+  const getMediaApiUrl = () => (String(import.meta.env.VITE_NOTIFICATION_API_URL || '').trim() || 'https://notification-api.mediatoolkit.workers.dev').replace(/\/+$/, '')
+
+  const openSharedImage = async (message) => {
+    const apiUrl = getMediaApiUrl()
+    const user = auth?.currentUser
+    if (!apiUrl || !user || !activeConversation) {
+      showToast('Image service is not configured or you are signed out.')
+      return
     }
-    reader.onerror = () => showToast('Could not read that image')
-    reader.readAsDataURL(file)
+    if (!message.attachmentPath) {
+      showToast('This image does not have a saved ImageKit path. Send it again after updating the Worker.')
+      return
+    }
+
+    try {
+      const idToken = await getIdToken(user)
+      const response = await fetch(apiUrl + '/media/open', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + idToken,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId: activeConversation.firebaseConversationId || directConversationId(user.uid, activeId),
+          messageId: message.id,
+        }),
+      })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        if (response.status === 410 || result.code === 'image_already_opened') {
+          setConversations((items) => items.map((item) => item.id === activeId
+            ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true } : entry) }
+            : item))
+        }
+        throw new Error(result.error || 'The image could not be opened.')
+      }
+
+      const imageBlob = await response.blob()
+      const objectUrl = URL.createObjectURL(imageBlob)
+      const senderView = message.from === 'me'
+      setViewOnceImage({ id: message.id, src: objectUrl, senderView })
+      if (!senderView) {
+        setConversations((items) => items.map((item) => item.id === activeId
+          ? { ...item, messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true } : entry) }
+          : item))
+      }
+    } catch (error) {
+      showToast(error?.message || 'Could not open this shared image.')
+    }
+  }
+
+  const closeViewOnceImage = () => {
+    if (!viewOnceImage) return
+    if (viewOnceImage.src?.startsWith('blob:')) URL.revokeObjectURL(viewOnceImage.src)
+    if (!viewOnceImage.senderView) {
+      const openedId = viewOnceImage.id
+      setConversations((items) => items.map((item) => item.id === activeId
+        ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, viewed: true } : message) }
+        : item))
+    }
+    setViewOnceImage(null)
+  }
+
+  const handleFile = async (event) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    if (!file || !activeConversation) return
+    input.value = ''
+
+    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+      showToast('Choose a JPG, PNG, WEBP or GIF image.')
+      return
+    }
+    if (file.size < 1 || file.size > 3 * 1024 * 1024) {
+      showToast('Choose an image up to 3 MB.')
+      return
+    }
+
+    const uid = auth?.currentUser?.uid
+    const apiUrl = getMediaApiUrl()
+    if (!uid) {
+      showToast('Sign in again before sharing an image.')
+      return
+    }
+    if (!db) {
+      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
+      return
+    }
+    if (!friendContacts.some((person) => person.id === activeId)) {
+      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
+      return
+    }
+    if (!apiUrl) {
+      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
+      return
+    }
+
+    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+
+    try {
+      // Repair older conversations before requesting the Worker upload.
+      await runTransaction(db, async (transaction) => {
+        const conversationRef = doc(db, 'conversations', conversationId)
+        const snapshot = await transaction.get(conversationRef)
+        if (!snapshot.exists()) {
+          transaction.set(conversationRef, {
+            createdBy: uid,
+            memberIds: [uid, activeId].sort(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+          throw new Error('This conversation does not have the expected members.')
+        }
+      })
+
+      const idToken = await getIdToken(auth.currentUser)
+      const uploadForm = new FormData()
+      uploadForm.append('conversationId', conversationId)
+      uploadForm.append('messageId', messageRef.id)
+      uploadForm.append('file', file, file.name)
+
+      const uploadResponse = await fetch(apiUrl + '/media/upload', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + idToken },
+        body: uploadForm,
+      })
+      const uploadResult = await uploadResponse.json().catch(() => ({}))
+      if (!uploadResponse.ok || !uploadResult.filePath) {
+        throw new Error(uploadResult.error || 'The image upload service rejected this file.')
+      }
+
+      await setDoc(messageRef, {
+        senderId: uid,
+        type: 'image',
+        attachmentPath: uploadResult.filePath,
+        viewOnce: true,
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+      })
+
+      setConversations((items) => items.map((item) => item.id === activeId
+        ? {
+          ...item,
+          firebaseConversationId: conversationId,
+          preview: 'Photo',
+          time: 'Now',
+          lastActivityAt: Date.now(),
+        }
+        : item))
+      setReplyTarget(null)
+      // The inbox listener reads the newest message directly, including photos.
+      showToast('Photo sent.')
+    } catch (error) {
+      showToast(error?.message || 'Could not send the image. Please try again.')
+    }
   }
 
   const stopVoiceWaveform = () => {
@@ -1455,36 +1602,18 @@ function App({ profile, isAdmin = false }) {
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
                         message.from === 'me' ? (
-                          message.senderViewed ? (
-                            <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>You opened this image · unavailable</span></div>
-                          ) : (
-                            <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
-                              if (!message.imageData || message.senderViewed) return
-                              setViewOnceImage({ id: message.id, src: message.imageData, senderView: true })
-                              setConversations((items) => items.map((item) => item.id === activeId ? {
-                                ...item,
-                                messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, senderViewed: true, senderOpenedAt: Date.now() } : entry),
-                              } : item))
-                            }}>
-                              <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                              <strong>{message.imageData ? 'Your sent image' : 'Image unavailable'}</strong>
-                              <small>{message.imageData ? 'Open once · you cannot reopen it after closing' : 'Image bytes are not stored in this browser preview'}</small>
-                            </button>
-                          )
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.attachmentPath} onClick={() => openSharedImage(message)}>
+                            <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
+                            <strong>Your sent image</strong>
+                            <small>{message.attachmentPath ? 'Preview your sent image' : 'Image file is unavailable'}</small>
+                          </button>
                         ) : message.viewed ? (
                           <div className="image-message image-view-once image-consumed"><Icon name="check" size={16} /><span>Opened · image unavailable</span></div>
                         ) : (
-                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.imageData} onClick={() => {
-                            if (!message.imageData || message.viewed) return
-                            setViewOnceImage({ id: message.id, src: message.imageData })
-                            setConversations((items) => items.map((item) => item.id === activeId ? {
-                              ...item,
-                              messages: item.messages.map((entry) => entry.id === message.id ? { ...entry, viewed: true, openedAt: Date.now() } : entry),
-                            } : item))
-                          }}>
+                          <button type="button" className="image-message image-view-once image-locked" disabled={!message.attachmentPath} onClick={() => openSharedImage(message)}>
                             <span className="image-lock-art"><Icon name="image" size={22} /><i><Icon name="shield" size={11} /></i></span>
-                            <strong>{message.imageData ? 'Image waiting for you' : 'Image unavailable in this preview'}</strong>
-                            <small>{message.imageData ? 'Open once · it cannot be reopened after closing' : 'Image bytes are not stored in this browser preview'}</small>
+                            <strong>Image waiting for you</strong>
+                            <small>{message.attachmentPath ? 'Open once · it cannot be reopened after closing' : 'Image file is unavailable'}</small>
                           </button>
                         )
                       ) : isAudioMessage(message) ? (
@@ -1653,17 +1782,9 @@ function App({ profile, isAdmin = false }) {
       </main>
 
       {viewOnceImage && (
-        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) {
-          const openedId = viewOnceImage.id
-          if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
-          setViewOnceImage(null)
-        } }}>
+        <div className="view-once-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeViewOnceImage() }}>
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
-            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
-              const openedId = viewOnceImage.id
-              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
-              setViewOnceImage(null)
-            }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
+            <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={closeViewOnceImage} aria-label="Close image"><Icon name="close" size={19} /></button></div>
             <img src={viewOnceImage.src} alt="Opened view-once image" />
             <p>This image can only be opened once in Converly. Close it to finish viewing.</p>
           </section>
