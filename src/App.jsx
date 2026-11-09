@@ -4,6 +4,8 @@ import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, ru
 import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
+import AdminDashboard from './AdminDashboard'
+import { isDesignatedAdminEmail } from './adminConfig'
 
 const initialConversations = [
   {
@@ -359,7 +361,10 @@ function VoiceMessagePlayer({ src, className = '' }) {
 
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
 
-function App({ profile }) {
+function App({ profile, isAdmin = false }) {
+  const isDesignatedOwner = isDesignatedAdminEmail(auth?.currentUser?.email)
+  const canAccessAdmin = isDesignatedOwner && auth?.currentUser?.emailVerified === true && isAdmin
+  const canSeeAdminEntry = isDesignatedOwner
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
   const [conversations, setConversations] = useState(() => {
     try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
@@ -1190,6 +1195,7 @@ function App({ profile }) {
           <button className={view === 'contacts' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('contacts'); setMobileChatOpen(false) }} aria-label="Contacts" title="Contacts"><Icon name="users" /></button>
           <button className={view === 'starred' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('starred'); setMobileChatOpen(false) }} aria-label="Starred" title="Starred"><Icon name="star" /></button>
           <button className={view === 'archive' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('archive'); setMobileChatOpen(false) }} aria-label="Archive" title="Archive"><Icon name="archive" /></button>
+          {canSeeAdminEntry && <button className={view === 'admin' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('admin'); setMobileChatOpen(false) }} aria-label="Admin" title="Admin"><Icon name="shield" /></button>}
         </nav>
         <div className="rail-bottom">
           <button className={view === 'settings' ? 'rail-button active' : 'rail-button'} onClick={() => { setView('settings'); setMobileChatOpen(false) }} aria-label="Settings" title="Settings"><Icon name="settings" /></button>
@@ -1295,12 +1301,13 @@ function App({ profile }) {
           </div>
         </div>
 
-        <nav className="mobile-nav-bar" aria-label="Mobile navigation">
+        <nav className={'mobile-nav-bar' + (canSeeAdminEntry ? ' admin-mobile-nav' : '')} aria-label="Mobile navigation">
           <button className={view === 'messages' ? 'selected' : ''} onClick={() => setView('messages')}><Icon name="message" size={17} /><span>Chats</span></button>
           <button className={view === 'contacts' ? 'selected' : ''} onClick={() => setView('contacts')}><Icon name="users" size={17} /><span>Contacts</span></button>
           <button className={view === 'starred' ? 'selected' : ''} onClick={() => setView('starred')}><Icon name="star" size={17} /><span>Starred</span></button>
           <button className={view === 'archive' ? 'selected' : ''} onClick={() => setView('archive')}><Icon name="archive" size={17} /><span>Archive</span></button>
           <button className={view === 'settings' ? 'selected' : ''} onClick={() => { setView('settings'); setMobileChatOpen(true) }}><Icon name="settings" size={17} /><span>Settings</span></button>
+          {canSeeAdminEntry && <button className={view === 'admin' ? 'selected' : ''} onClick={() => { setView('admin'); setMobileChatOpen(true) }}><Icon name="shield" size={17} /><span>Admin</span></button>}
         </nav>
 
         <div className="inbox-footer">
@@ -1313,7 +1320,24 @@ function App({ profile }) {
       </aside>
 
       <main className={'main-panel' + (mobileChatOpen ? ' mobile-visible' : '')}>
-        {view === 'settings' ? (
+        {view === 'admin' ? (
+          canAccessAdmin ? <AdminDashboard /> : (
+            <section className="admin-access-pending">
+              <div className="eyebrow">CONVERLY CONTROL</div>
+              <h2>Admin access setup</h2>
+              <p>This page is reserved for <strong>armansomani786@gmail.com</strong>.</p>
+              <div className="admin-pending-check">
+                <strong>{auth?.currentUser?.emailVerified ? '✓ Email verified' : '1. Verify the owner Gmail address'}</strong>
+                {!auth?.currentUser?.emailVerified && <span>Open the verification email sent by Firebase, then sign in again.</span>}
+              </div>
+              <div className="admin-pending-check">
+                <strong>2. Enable the Firebase admin claim</strong>
+                <span>The secure <code>admin: true</code> custom claim must be assigned to the exact owner account using the Firebase Admin SDK. It cannot be enabled by changing a profile field or by the browser.</span>
+              </div>
+              <p className="admin-pending-note">After the claim is granted, sign out and sign in again. The Admin dashboard will then unlock automatically. Other accounts will not see this destination.</p>
+            </section>
+          )
+        ) : view === 'settings' ? (
           <section className="settings-view">
             <button className="settings-mobile-back" onClick={() => setMobileChatOpen(false)}><Icon name="arrowLeft" size={16} /> Back to chats</button>
             <div className="settings-header">
