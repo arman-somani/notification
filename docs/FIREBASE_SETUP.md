@@ -14,7 +14,7 @@ This guide prepares the existing React/Vite app for its first real backend conne
 - **Authentication:** Get started → Sign-in method → enable Email/Password.
 - **Cloud Firestore:** Create database and choose a region deliberately.
 - **Realtime Database:** Create database in locked mode.
-- **Storage:** Not enabled. The Firebase Spark plan requires a billing upgrade for Firebase Storage, so keep image/voice media on the separately configured ImageKit service. Do not upgrade Firebase to Blaze for this setup.
+- **Storage:** Not enabled for chat images. Keep chat images on ImageKit through the Cloudflare Worker; Firebase Storage is not used by this feature. Voice-note uploads need their own configured media path.
 
 Use a nearby supported region for the services where practical. Do not deploy the repository's current rules yet; they are scaffolding and need tightening and emulator tests first.
 
@@ -39,7 +39,7 @@ After creating or changing .env.local, restart Vite:
 
 ## 4. Configure the Cloudflare Worker URL
 
-The deployed Worker base URL is `https://notification-api.mediatoolkit.workers.dev`. Its `/health` endpoint has returned the expected health response. Add the base URL to `.env.local` as `VITE_NOTIFICATION_API_URL` (without `/health`). The health check confirms deployment only; Firebase-authenticated ImageKit uploads still need security hardening and end-to-end testing.
+The deployed Worker base URL is `https://notification-api.mediatoolkit.workers.dev`. Its `/health` endpoint has returned the expected health response. Add the base URL to `.env.local` as `VITE_NOTIFICATION_API_URL` (without `/health`). The Worker now exposes authenticated ImageKit upload and one-time-open routes. Set its Firebase Web API key and ImageKit public/private keys as Cloudflare secrets, then deploy the Worker from the repository's wrangler.toml. Test with two separate signed-in accounts.
 
 ## 5. Keep credentials private
 
@@ -47,7 +47,7 @@ Do not paste passwords, service-account keys, private keys, or user data into th
 
 ## 6. Implementation sequence
 
-1. Install the Firebase Web SDK and initialize Auth, Firestore and Realtime Database. Keep image and voice media on ImageKit; do not initialize Firebase Storage for this Spark-plan setup.
+1. Install the Firebase Web SDK and initialize Auth, Firestore and Realtime Database. Use the Cloudflare Worker and private ImageKit assets for chat images; do not initialize Firebase Storage for chat images in this Spark-plan setup.
 2. Add registration, login, logout, auth persistence and a protected app session.
 3. Reserve normalized usernames transactionally so two accounts cannot claim the same handle.
 4. Move profiles and conversation data into Firestore.
