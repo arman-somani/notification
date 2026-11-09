@@ -17,9 +17,6 @@ const getConversationActivity = (conversation) => {
 }
 
 // Treat every audio-backed message as a voice message, even if its type metadata differs.
-function isAudioMessage(message) {
-  return message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
-}
 
 const composerEmojiOptions = ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😍','🥰','😘','😋','😎','🤩','🥳','🤔','🤗','🤭','😴','😭','😢','😡','😮','😱','🙏','👏','👍','👎','👌','✌️','🤝','🙌','💪','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💯','🔥','✨','🎉','🎂','🌹','☀️','🌙','⭐','☕','🍕','🎈','💡','✅','❌']
 
@@ -1079,7 +1076,7 @@ function App({ profile, isAdmin = false }) {
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
-    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : isAudioMessage(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : (message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
@@ -1546,7 +1543,7 @@ function App({ profile, isAdmin = false }) {
                             <small>{message.attachmentPath ? 'Open once · it cannot be reopened after closing' : 'Image file is unavailable'}</small>
                           </button>
                         )
-                      ) : isAudioMessage(message) ? (
+                      ) : (message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))) ? (
                         message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
@@ -1559,7 +1556,7 @@ function App({ profile, isAdmin = false }) {
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
                       <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
-                      {!isAudioMessage(message) && <>
+                      {!(message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
                         <button type="button" onClick={() => beginReply(message)}>Reply</button>
@@ -1577,7 +1574,7 @@ function App({ profile, isAdmin = false }) {
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
                       </div>}
                       </>}
-                      {!isAudioMessage(message) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
+                      {!(message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
