@@ -4,7 +4,7 @@ import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './AuthScreen.css'
 
-const isGmailAddress = (value) => /^[^\\s@]+@gmail\\.com$/i.test(String(value || '').trim())
+const isGmailAddress = (value) => new RegExp('^[^\\s@]+@gmail\\.com$', 'i').test(String(value || '').trim())
 
 const explainAuthError = (error) => {
   switch (error?.code) {
