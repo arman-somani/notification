@@ -1577,7 +1577,7 @@ function App({ profile }) {
               </div>
               <AccountPrivacyPanel profile={profile} />
               <div className="settings-section">
-                <div className="settings-section-title"><strong>Appearance</strong><span>How Notification looks on your device</span></div>
+                <div className="settings-section-title"><strong>Appearance</strong><span>How Converly looks on your device</span></div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="sun" /></span>
                   <span className="setting-copy"><strong>Color theme</strong><small>Choose a look that feels right</small></span>
