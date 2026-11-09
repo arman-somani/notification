@@ -679,13 +679,16 @@ function App({ profile, onLogout }) {
           preview: data.lastMessagePreview || item.preview || 'Start a conversation',
           time: lastMessageAt ? lastMessageAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
           lastActivityAt: lastMessageAt ? lastMessageAt.getTime() : item.lastActivityAt || 0,
+          unread: activeId === person.id || data.lastMessageSenderId === uid
+            ? 0
+            : data.lastMessageSenderId ? Math.max(1, item.unread || 0) : item.unread,
         } : item))
       }, (error) => {
         if (error?.code !== 'permission-denied') showToast(error?.message || 'Could not update the inbox.')
       })
     })
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
-  }, [friendContacts, auth?.currentUser?.uid])
+  }, [friendContacts, activeId, auth?.currentUser?.uid])
 
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
@@ -817,6 +820,7 @@ function App({ profile, onLogout }) {
         await setDoc(doc(db, 'conversations', conversationId), {
           lastMessageAt: serverTimestamp(),
           lastMessagePreview: text.slice(0, 160),
+          lastMessageSenderId: uid,
           updatedAt: serverTimestamp(),
         }, { merge: true })
         setMessageText('')
