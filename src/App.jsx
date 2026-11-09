@@ -373,7 +373,8 @@ function App({ profile, isAdmin = false }) {
           const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
-          return { id: contactUid, name: data.displayName || data.username, username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+          const displayName = data.displayName || data.username || 'Converly user'
+          return { id: contactUid, name: displayName, username: data.username || '', avatarId: data.avatarId, initials: displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
         if (usernameTerm.length >= 3) {
@@ -506,11 +507,29 @@ function App({ profile, isAdmin = false }) {
             }
           })
           setConversations((items) => {
-            const exists = items.some((item) => item.id === activeId)
-            if (!exists) return items
-            return items.map((item) => item.id === activeId
-              ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1] ? (messages[messages.length - 1].type === 'image' ? 'Photo' : messages[messages.length - 1].text || 'Message') : 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
-              : item)
+            const latest = messages[messages.length - 1]
+            const preview = latest
+              ? (latest.type === 'image' ? 'Photo' : latest.text || 'Message')
+              : 'Start a conversation'
+            const existing = items.find((item) => item.id === friend.id)
+            const nextConversation = {
+              ...(existing || friend),
+              firebaseConversationId: conversationId,
+              messages,
+              preview,
+              time: latest?.time || existing?.time || '',
+              unread: existing?.unread || 0,
+              pinned: existing?.pinned || false,
+              favorite: existing?.favorite || false,
+              archived: existing?.archived || false,
+            }
+            // The first Firestore snapshot can arrive before the separate
+            // friend-inbox effect inserts this contact. Upsert instead of
+            // dropping that initial snapshot, or existing messages stay hidden
+            // until another message is written.
+            return existing
+              ? items.map((item) => item.id === friend.id ? nextConversation : item)
+              : [...items, nextConversation]
           })
         }, (error) => {
           setToast(error?.code === 'permission-denied'
@@ -1521,7 +1540,7 @@ function App({ profile, isAdmin = false }) {
                 {activeConversation.messages.length === 0 ? (
                   <div className="chat-empty-state">
                     <div className="empty-avatar"><Avatar person={activeConversation} size="xl" /></div>
-                    <strong>Say hello to {activeConversation.name.split(' ')[0]}</strong>
+                    <strong>Say hello to {String(activeConversation.name || 'your friend').split(' ')[0]}</strong>
                     <span>This is the beginning of your conversation.</span>
                   </div>
                 ) : activeConversation.messages.filter((message) => !messageSearch.trim() || (message.text || message.fileName || '').toLowerCase().includes(messageSearch.trim().toLowerCase())).length === 0 ? (
