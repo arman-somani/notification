@@ -346,7 +346,7 @@ function App({ profile, isAdmin = false }) {
   }, [auth?.currentUser?.uid])
 
   useEffect(() => {
-    if ((!showNewChat && !showFriendRequests) || !auth?.currentUser || !db) return undefined
+    if (!auth?.currentUser || !db) return undefined
     let cancelled = false
     const loadPeopleAndRequests = async () => {
       setDiscoveryLoading(true)
@@ -493,6 +493,26 @@ function App({ profile, isAdmin = false }) {
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
     ...friendContacts.filter((person) => !conversations.some((item) => item.id === person.id)),
   ], [conversations, friendContacts])
+
+  // Populate the inbox from real accepted friends; never seed it with demo profiles.
+  useEffect(() => {
+    if (!friendContacts.length) return
+    setConversations((items) => {
+      const existingIds = new Set(items.map((item) => item.id))
+      const newFriends = friendContacts.filter((person) => !existingIds.has(person.id)).map((person) => ({
+        ...person,
+        preview: 'Start a conversation',
+        time: '',
+        unread: 0,
+        pinned: false,
+        favorite: false,
+        archived: false,
+        messages: [],
+      }))
+      return newFriends.length ? [...items, ...newFriends] : items
+    })
+    setActiveId((current) => current || friendContacts[0].id)
+  }, [friendContacts])
 
   const visibleConversations = useMemo(() => {
     let items = conversations.filter((item) => !deletedChatIds.includes(item.firebaseConversationId || (item.status === 'group' ? item.id : directConversationId(auth?.currentUser?.uid || '', item.id))))
