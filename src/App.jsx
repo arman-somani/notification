@@ -846,7 +846,8 @@ function App({ profile, onLogout }) {
           lastMessageSenderId: uid,
           updatedAt: serverTimestamp(),
         }, { merge: true })
-        setMessageText('')
+        // The composer was already cleared before the async write started.
+        // Do not clear it again here: the user may have started a new draft.
         setReplyTarget(null)
         messageInputRef.current?.focus()
       } catch (error) {
