@@ -112,3 +112,21 @@
   .admin-identity-card { align-items: flex-start; flex-wrap: wrap; }
   .admin-verified-label { margin-left: 50px; }
 }
+
+.admin-mobile-back {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 18px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .admin-mobile-back { display: inline-flex; }
+}
