@@ -1,4 +1,4 @@
-# Notification — Product Feature Scope
+# Converly — Product Feature Scope
 
 ## Product decisions
 - Target: complete messaging platform.
@@ -6,7 +6,7 @@
 - AI features: excluded.
 - All shared images are view-once by default; users have no normal-image or repeat-view option.
 - Voice messages remain in scope as browser-recorded audio.
-- Preserve the existing monochrome Notification UI.
+- Preserve the existing monochrome Converly UI.
 
 ## Messaging
 - [ ] One-to-one private conversations
