@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 
 const readList = (key) => {
@@ -16,12 +16,26 @@ export default function AccountPrivacyPanel({ profile }) {
   const [groupInvitePrivacy, setGroupInvitePrivacy] = useState(() => profile?.privacy?.whoCanAddToGroups || localStorage.getItem('notification-group-invite-privacy') || 'contacts')
   const [discoverable, setDiscoverable] = useState(() => profile?.privacy?.discoverable ?? (localStorage.getItem('notification-discoverable') !== 'false'))
   const [blockedHandles, setBlockedHandles] = useState(() => readList('notification-blocked-handles'))
+  const [blockedLoading, setBlockedLoading] = useState(false)
   const [blockedInput, setBlockedInput] = useState('')
   const [notice, setNotice] = useState('')
   const [reportUsername, setReportUsername] = useState('')
   const [reportReason, setReportReason] = useState('spam')
   const [reportDetails, setReportDetails] = useState('')
   const [reports, setReports] = useState(() => readList('notification-local-reports'))
+
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return undefined
+    let active = true
+    setBlockedLoading(true)
+    getDocs(collection(db, 'users', uid, 'blocks')).then((snapshot) => {
+      if (active) setBlockedHandles(snapshot.docs.map((item) => item.data().username).filter(Boolean))
+    }).catch((error) => {
+      if (active) setNotice(error?.message || 'Could not load your blocked accounts.')
+    }).finally(() => { if (active) setBlockedLoading(false) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -109,19 +123,33 @@ export default function AccountPrivacyPanel({ profile }) {
     }
   }
 
-  const addBlockedHandle = () => {
+  const addBlockedHandle = async () => {
     const handle = blockedInput.trim().toLowerCase().replace(/^@/, '')
-    if (!handle || !/^[a-z0-9_]{3,20}$/.test(handle)) {
-      setNotice('Enter a valid username to block.')
-      return
-    }
-    if (handle === username.toLowerCase()) {
-      setNotice('You cannot block your own profile.')
-      return
-    }
-    setBlockedHandles((items) => items.includes(handle) ? items : [...items, handle])
-    setBlockedInput('')
-    setNotice('Blocked list updated on this device only.')
+    const uid = auth?.currentUser?.uid
+    if (!handle || !/^[a-z0-9_]{3,20}$/.test(handle)) { setNotice('Enter a valid username to block.'); return }
+    if (handle === username.toLowerCase()) { setNotice('You cannot block your own profile.'); return }
+    if (!uid || !db) { setNotice('Sign in again before blocking an account.'); return }
+    try {
+      const usernameSnapshot = await getDoc(doc(db, 'usernames', handle))
+      const targetUid = usernameSnapshot.exists() ? usernameSnapshot.data().uid : ''
+      if (!targetUid || targetUid === uid) { setNotice('No account found for that username.'); return }
+      await setDoc(doc(db, 'users', uid, 'blocks', targetUid), { uid: targetUid, username: handle, createdAt: serverTimestamp() })
+      setBlockedHandles((items) => items.includes(handle) ? items : [...items, handle])
+      setBlockedInput('')
+      setNotice('@' + handle + ' is blocked. They can no longer message you.')
+    } catch (error) { setNotice(error?.message || 'Could not block this account. Please try again.') }
+  }
+
+  const removeBlockedHandle = async (handle) => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return
+    try {
+      const usernameSnapshot = await getDoc(doc(db, 'usernames', handle))
+      const targetUid = usernameSnapshot.exists() ? usernameSnapshot.data().uid : ''
+      if (targetUid) await deleteDoc(doc(db, 'users', uid, 'blocks', targetUid))
+      setBlockedHandles((items) => items.filter((item) => item !== handle))
+      setNotice('@' + handle + ' has been unblocked.')
+    } catch (error) { setNotice(error?.message || 'Could not unblock this account.') }
   }
 
   const submitReport = () => {
@@ -151,9 +179,9 @@ export default function AccountPrivacyPanel({ profile }) {
       <label className="account-discoverability"><input type="checkbox" checked={discoverable} onChange={(event) => setDiscoverable(event.target.checked)} /> Allow people to find me by username</label>
       <div className="account-panel-actions"><button className="secondary-button" type="button" onClick={savePrivacySettings}>Save privacy settings</button></div>
       <div className="account-divider" />
-      <div className="account-subheading"><strong>Blocked usernames</strong><span>Blocked accounts cannot contact you once server enforcement is connected.</span></div>
+      <div className="account-subheading"><strong>Blocked usernames</strong><span>Blocked accounts cannot send you messages. Blocking is synced to your account.</span></div>
       <div className="account-inline-input"><input value={blockedInput} onChange={(event) => setBlockedInput(event.target.value)} placeholder="Enter username to block" /><button className="secondary-button" onClick={addBlockedHandle}>Block</button></div>
-      {blockedHandles.length > 0 ? <div className="blocked-handle-list">{blockedHandles.map((handle) => <span key={handle}>@{handle}<button onClick={() => setBlockedHandles((items) => items.filter((item) => item !== handle))} aria-label={'Unblock ' + handle}>×</button></span>)}</div> : <p className="account-muted">No blocked usernames saved.</p>}
+      {blockedLoading ? <p className="account-muted">Loading blocked accounts…</p> : blockedHandles.length > 0 ? <div className="blocked-handle-list">{blockedHandles.map((handle) => <span key={handle}>@{handle}<button onClick={() => removeBlockedHandle(handle)} aria-label={'Unblock ' + handle}>×</button></span>)}</div> : <p className="account-muted">No blocked usernames saved.</p>}
       <div className="account-divider" />
       <div className="account-subheading"><strong>Report an account</strong><span>Report impersonation, spam, harassment or other abuse.</span></div>
       <div className="account-report-form">
@@ -165,7 +193,7 @@ export default function AccountPrivacyPanel({ profile }) {
       {reports.length > 0 && <div className="local-story-list"><strong>Reports saved on this device</strong>{reports.slice(0, 5).map((report) => <div key={report.id}><span>@{report.target} · {report.reason}</span><small>{new Date(report.createdAt).toLocaleString()} · {report.status}</small></div>)}</div>}
       <div className="verified-note"><span className="verified-label">✓ Verified accounts</span> are assigned by administrators after review. Verification cannot be self-selected.</div>
       {notice && <p className="account-notice" role="status">{notice}</p>}
-      <p className="account-security-note">Your display name, bio and privacy preferences sync to your Firebase account. Blocking, report delivery/review and verified badges still require trusted server-side enforcement.</p>
+      <p className="account-security-note">Your display name, bio, privacy preferences and blocked accounts sync to your Firebase account. Report delivery/review and verified badges require administrator review.</p>
     </section>
   )
 }
