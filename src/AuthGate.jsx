@@ -6,7 +6,7 @@ import AuthScreen from './AuthScreen'
 import LandingPage from './LandingPage'
 import ChatApp from './App'
 
-const isGmailAddress = (value) => /^[^\\s@]+@gmail\\.com$/i.test(String(value || '').trim())
+const isGmailAddress = (value) => new RegExp('^[^\\s@]+@gmail\\.com$', 'i').test(String(value || '').trim())
 
 export default function AuthGate() {
   const [showAuth, setShowAuth] = useState(false)
