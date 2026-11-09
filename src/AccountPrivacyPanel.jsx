@@ -6,7 +6,7 @@ const readList = (key) => {
 
 export default function AccountPrivacyPanel() {
   const [displayName, setDisplayName] = useState(() => localStorage.getItem('notification-display-name') || 'Your workspace')
-  const [username, setUsername] = useState(() => localStorage.getItem('notification-username') || 'notification_user')
+  const [username, setUsername] = useState(() => localStorage.getItem('notification-username') || 'converly_user')
   const [usernameLocked, setUsernameLocked] = useState(() => localStorage.getItem('notification-username-locked') === 'true' || Boolean(localStorage.getItem('notification-username')))
   const [bio, setBio] = useState(() => localStorage.getItem('notification-bio') || '')
   const [messagePrivacy, setMessagePrivacy] = useState(() => localStorage.getItem('notification-message-privacy') || 'everyone')
@@ -43,7 +43,7 @@ export default function AccountPrivacyPanel() {
       setNotice('Username must be 3–20 characters using letters, numbers or underscores.')
       return
     }
-    const previousUsername = (localStorage.getItem('notification-username') || 'notification_user').toLowerCase()
+    const previousUsername = (localStorage.getItem('notification-username') || 'converly_user').toLowerCase()
     const reserved = readList('notification-username-registry').map((item) => String(item).toLowerCase())
     if (reserved.includes(normalized) && normalized !== previousUsername) {
       setNotice('That username is already used on this device. Choose another one.')
