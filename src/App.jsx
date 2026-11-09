@@ -807,6 +807,10 @@ function App({ profile, onLogout }) {
       setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
     }
 
+    // Clear the controlled composer immediately after accepting the send action.
+    // If Firebase rejects the write, restore the text unless the user has already
+    // started composing a newer message.
+    setMessageText('')
     const uid = auth?.currentUser?.uid
     const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
     if (isAcceptedFriend) {
@@ -846,6 +850,7 @@ function App({ profile, onLogout }) {
         setReplyTarget(null)
         messageInputRef.current?.focus()
       } catch (error) {
+        setMessageText((current) => current.trim() ? current : text)
         showToast(error?.code === 'permission-denied'
           ? 'Firebase denied this message. Check that the latest Firestore rules are deployed.'
           : error?.message || 'Could not send message. Please try again.')
