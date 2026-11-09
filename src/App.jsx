@@ -449,45 +449,88 @@ function App({ profile, isAdmin = false }) {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
     if (!uid || !db || !friend) return undefined
+
     const conversationId = directConversationId(uid, friend.id)
-    const messagesQuery = query(
-      collection(db, 'conversations', conversationId, 'messages'),
-      orderBy('createdAt', 'asc'),
-      limit(300),
-    )
-    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-      const messages = snapshot.docs.map((messageDoc) => {
-        const data = messageDoc.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-        return {
-          id: messageDoc.id,
-          from: data.senderId === uid ? 'me' : 'them',
-          senderId: data.senderId,
-          type: data.type || 'text',
-          text: data.text || '',
-          attachmentPath: data.attachmentPath || '',
-          viewOnce: data.viewOnce === true,
-          viewed: data.senderId !== uid && Boolean(data.viewedByUid),
-          replyToId: data.replyToId,
-          replyToText: data.replyToText,
-          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
-          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-          status: data.senderId === uid ? 'sent' : 'received',
+    const conversationRef = doc(db, 'conversations', conversationId)
+    let cancelled = false
+    let unsubscribe = () => {}
+
+    const startMessageListener = async () => {
+      try {
+        // Ensure the shared parent exists before subscribing. If the recipient
+        // opened this chat before the first message, the old listener could be
+        // rejected by rules and permanently stop listening.
+        await runTransaction(db, async (transaction) => {
+          const conversationSnapshot = await transaction.get(conversationRef)
+          if (!conversationSnapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, friend.id].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+            return
+          }
+
+          const memberIds = conversationSnapshot.data().memberIds || []
+          if (!memberIds.includes(uid) || !memberIds.includes(friend.id)) {
+            throw new Error('This conversation does not have the expected members.')
+          }
+        })
+
+        if (cancelled) return
+
+        const messagesQuery = query(
+          collection(db, 'conversations', conversationId, 'messages'),
+          orderBy('createdAt', 'asc'),
+          limit(300),
+        )
+        unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+          const messages = snapshot.docs.map((messageDoc) => {
+            const data = messageDoc.data()
+            const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+            return {
+              id: messageDoc.id,
+              from: data.senderId === uid ? 'me' : 'them',
+              senderId: data.senderId,
+              type: data.type || 'text',
+              text: data.text || '',
+              attachmentPath: data.attachmentPath || '',
+              viewOnce: data.viewOnce === true,
+              viewed: data.senderId !== uid && Boolean(data.viewedByUid),
+              replyToId: data.replyToId,
+              replyToText: data.replyToText,
+              editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
+              time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+              status: data.senderId === uid ? 'sent' : 'received',
+            }
+          })
+          setConversations((items) => {
+            const exists = items.some((item) => item.id === activeId)
+            if (!exists) return items
+            return items.map((item) => item.id === activeId
+              ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1] ? (messages[messages.length - 1].type === 'image' ? 'Photo' : messages[messages.length - 1].text || 'Message') : 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
+              : item)
+          })
+        }, (error) => {
+          setToast(error?.code === 'permission-denied'
+            ? 'Message sync permission denied. Publish the latest Firestore rules in Firebase Console.'
+            : error?.message || 'Could not sync messages.')
+        })
+      } catch (error) {
+        if (!cancelled) {
+          setToast(error?.code === 'permission-denied'
+            ? 'Could not prepare this chat. Publish the latest Firestore rules in Firebase Console.'
+            : error?.message || 'Could not prepare this conversation.')
         }
-      })
-      setConversations((items) => {
-        const exists = items.some((item) => item.id === activeId)
-        if (!exists) return items
-        return items.map((item) => item.id === activeId
-          ? { ...item, firebaseConversationId: conversationId, messages, preview: messages[messages.length - 1] ? (messages[messages.length - 1].type === 'image' ? 'Photo' : messages[messages.length - 1].text || 'Message') : 'Start a conversation', time: messages[messages.length - 1]?.time || item.time }
-          : item)
-      })
-    }, (error) => {
-      setToast(error?.code === 'permission-denied'
-        ? 'Message sync permission denied. Deploy the latest Firestore rules.'
-        : error?.message || 'Could not sync messages.')
-    })
-    return unsubscribe
+      }
+    }
+
+    startMessageListener()
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [activeId, friendContacts, auth?.currentUser?.uid])
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
