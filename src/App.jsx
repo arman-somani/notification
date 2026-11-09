@@ -903,7 +903,7 @@ function App({ profile }) {
       showToast('Choose a JPG, PNG, WEBP or GIF image.')
       return
     }
-    if (file.size > 3 * 1024 * 1024) {
+    if (file.size >= 3 * 1024 * 1024) {
       showToast('Choose an image smaller than 3 MB.')
       return
     }
@@ -1831,7 +1831,7 @@ function App({ profile }) {
           <section className="view-once-viewer" role="dialog" aria-modal="true" aria-label="View-once image">
             <div className="view-once-viewer-header"><span><Icon name="shield" size={14} /> View-once image</span><button type="button" onClick={() => {
               const openedId = viewOnceImage.id
-              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null } : message) } : item))
+              if (!viewOnceImage.senderView) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === openedId ? { ...message, imageData: null, imageUrl: null, viewed: true } : message) } : item))
               setViewOnceImage(null)
             }} aria-label="Close image"><Icon name="close" size={19} /></button></div>
             <img src={viewOnceImage.src} alt="Opened view-once image" />
