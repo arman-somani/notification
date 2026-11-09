@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './App.css'
@@ -368,6 +369,7 @@ function App({ profile, onLogout }) {
   })
   const [activeId, setActiveId] = useState(() => auth?.currentUser?.uid ? '' : 'alex')
   const [view, setView] = useState('messages')
+  const [loggingOut, setLoggingOut] = useState(false)
   const [search, setSearch] = useState('')
   const [listFilter, setListFilter] = useState('all')
   const [messageText, setMessageText] = useState('')
@@ -707,6 +709,23 @@ function App({ profile, onLogout }) {
     if (query) items = items.filter((item) => item.name.toLowerCase().includes(query) || (item.preview || '').toLowerCase().includes(query))
     return [...items].sort((a, b) => getConversationActivity(b) - getConversationActivity(a))
   }, [conversations, directory, listFilter, search, view])
+
+  const handleLogout = async () => {
+    if (!auth || !auth.currentUser || loggingOut) return
+    setLoggingOut(true)
+    try {
+      await signOut(auth)
+      localStorage.removeItem('notification-conversations')
+      setConversations([])
+      setActiveId('')
+      setView('messages')
+      setMobileChatOpen(false)
+    } catch (error) {
+      showToast(error?.message || 'Could not log out. Please try again.')
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   const showToast = (message) => {
     setToast(message)
@@ -1400,6 +1419,16 @@ function App({ profile, onLogout }) {
                   <span className="setting-icon"><Icon name="shield" /></span>
                   <span className="setting-copy"><strong>Security center</strong><small>Authentication and privacy controls will be available here</small></span>
                   <span className="coming-soon">COMING SOON</span>
+                </div>
+              </div>
+              <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Account</strong><span>Manage your Notification session</span></div>
+                <div className="setting-row">
+                  <span className="setting-icon"><Icon name="logout" /></span>
+                  <span className="setting-copy"><strong>Log out</strong><small>Sign out of this account on this device</small></span>
+                  <button className="settings-logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
+                    <Icon name="logout" size={15} /> {loggingOut ? 'Logging out…' : 'Log out'}
+                  </button>
                 </div>
               </div>
               <div className="demo-note"><Icon name="info" size={16} /><span>Profile and privacy settings sync to your account. Appearance, sound and compact-view preferences stay on this device.</span></div>
