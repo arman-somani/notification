@@ -56,3 +56,12 @@
 .auth-back-button { display:inline-flex; margin:0 0 24px; padding:0; border:0; background:transparent; color:#777; font:inherit; font-size:12px; font-weight:650; cursor:pointer; }
 .auth-back-button:hover { color:#171717; }
 :root[data-theme="dark"] .auth-back-button:hover { color:#f1f1ef; }
+
+
+/* Keep authentication and profile setup typography aligned with the chat app. */
+.auth-page { font-family: 'DM Sans', Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+.auth-card { font-size: 14px; }
+.auth-form label { font-size: 13px; line-height: 1.45; }
+.auth-form input, .auth-form button { font-family: inherit; font-size: 14px; }
+.auth-eyebrow, .auth-form small, .auth-footnote, .auth-footnote code,
+.auth-missing-list code, .auth-switch, .auth-message, .auth-loading { font-size: 11px; line-height: 1.5; }
