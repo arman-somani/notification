@@ -7,14 +7,14 @@ Every image sent in Notification is automatically view-once; there is no toggle 
 Hiding an image after rendering it, deleting a React component, or changing localStorage is not security. A client can replay requests and a permanent download URL can be reused.
 
 ## Recommended flow
-1. Upload the image to a private object path associated with its conversation and message.
+1. Upload the image through the authenticated Cloudflare Worker to a private ImageKit asset associated with its conversation and message.
 2. Store metadata only: conversation ID, sender ID, eligible recipient/member scope, object path, viewOnce=true, consumedAt=null, and expiry.
-3. Deny direct Storage reads for the view-once object path.
-4. Recipient calls an authenticated HTTPS/callable Cloud Function named openViewOnceImage.
+3. Keep the ImageKit file private. Do not store or return its permanent public delivery URL to the browser.
+4. Recipient calls the authenticated Cloudflare Worker route POST /media/open with their Firebase ID token, conversation ID, and message ID.
 5. The function verifies identity, membership, recipient eligibility, block state, expiry, and that consumedAt is still null.
 6. The function atomically claims the message in a Firestore transaction. Only one concurrent request can win.
-7. Stream the object through an authenticated one-time response/proxy. Do not return a reusable permanent public URL.
-8. Further requests fail as consumed/expired. Delete the object asynchronously after its retention window.
+7. Stream the private ImageKit bytes through the authenticated Worker response. Do not return a reusable permanent public URL.
+8. Further recipient requests fail as consumed/expired. Delete the ImageKit object asynchronously after its retention window.
 9. UI replaces the image with an Opened or Expired placeholder.
 
 ## Important limitations
