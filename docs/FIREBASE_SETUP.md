@@ -16,7 +16,7 @@ This guide prepares the existing React/Vite app for its first real backend conne
 - **Realtime Database:** Create database in locked mode.
 - **Storage:** Not enabled for chat images. Keep chat images on ImageKit through the Cloudflare Worker; Firebase Storage is not used by this feature. Voice-note uploads need their own configured media path.
 
-Use a nearby supported region for the services where practical. Do not deploy the repository's current rules yet; they are scaffolding and need tightening and emulator tests first.
+Use a nearby supported region for the services where practical. The checked-in Firestore rules now cover the current direct-message and ImageKit view-once flow; deploy them to your development project for testing. Run the Firebase Emulator Suite and complete a security review before using the same rules in production.
 
 ## 3. Add the Web App config locally
 
