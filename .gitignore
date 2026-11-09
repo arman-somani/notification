@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# Firebase Admin SDK credentials (never commit or deploy these)
+firebase-admin-key.json
+firebase-admin*.json
+service-account*.json
