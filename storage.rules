@@ -6,8 +6,10 @@ service firebase.storage {
     }
 
     function isConversationMember(conversationId) {
+      let conversationPath = /databases/(default)/documents/conversations/$(conversationId);
       return signedIn()
-        && firestore.exists(/databases/(default)/documents/conversations/$(conversationId)/members/$(request.auth.uid));
+        && firestore.exists(conversationPath)
+        && request.auth.uid in firestore.get(conversationPath).data.memberIds;
     }
 
     // Images are all view-once. Direct client reads are prohibited.
