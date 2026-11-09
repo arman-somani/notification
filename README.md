@@ -1,4 +1,4 @@
-# Notification
+# Converly
 
 A React + Vite messaging application. The existing monochrome chat interface is being connected to Firebase in staged, testable phases.
 
