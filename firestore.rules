@@ -158,16 +158,38 @@ service cloud.firestore {
         allow create: if isConversationMember(conversationId)
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
-          && (request.resource.data.type != 'image' || request.resource.data.viewOnce == true)
+          && (
+            request.resource.data.type != 'image'
+            || (
+              request.resource.data.viewOnce == true
+              && request.resource.data.attachmentPath is string
+              && request.resource.data.attachmentPath.size() > 0
+              && request.resource.data.attachmentPath.size() <= 1024
+            )
+          )
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
             'forwardedFrom', 'mentionIds'
           ]);
         allow update: if isConversationMember(conversationId)
-          && resource.data.senderId == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['text', 'editedAt', 'deletedAt']);
+          && (
+            (
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['text', 'editedAt', 'deletedAt'])
+            )
+            || (
+              resource.data.type == 'image'
+              && resource.data.viewOnce == true
+              && resource.data.senderId != request.auth.uid
+              && !('viewedByUid' in resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['viewedByUid', 'viewedAt'])
+              && request.resource.data.viewedByUid == request.auth.uid
+              && request.resource.data.viewedAt is timestamp
+            )
+          );
         allow delete: if false;
       }
 
