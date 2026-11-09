@@ -109,7 +109,7 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
     <main className="auth-page">
       <section className="auth-card">
         {onBack && <button className="auth-back-button" type="button" onClick={onBack}>← Back to home</button>}
-        <div className="auth-brand"><span className="auth-brand-mark">N</span><span>notification<span>.</span></span></div>
+        <div className="auth-brand"><span className="auth-brand-mark">C</span><span>converly<span>.</span></span></div>
         <p className="auth-eyebrow">{profileSetup ? 'ONE LAST STEP' : 'YOUR PRIVATE SPACE'}</p>
         <h1>{profileSetup ? 'Create your profile' : isRegister ? 'Create your account' : 'Welcome back'}</h1>
         <p className="auth-description">{profileSetup ? 'Choose your display name and a username. Your username is permanent after this step.' : isRegister ? 'A calmer place for the conversations that matter.' : 'Sign in to continue to your conversations.'}</p>
@@ -134,7 +134,7 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
 
         {!profileSetup && !isRegister && <button className="auth-text-button" type="button" onClick={handleResetPassword} disabled={busy}>Forgot password?</button>}
         {!profileSetup && (
-          <p className="auth-switch">{isRegister ? 'Already have an account?' : 'New to Notification?'} <button type="button" onClick={() => { setMode(isRegister ? 'signin' : 'register'); setError(''); setNotice('') }}>{isRegister ? 'Sign in' : 'Create an account'}</button></p>
+          <p className="auth-switch">{isRegister ? 'Already have an account?' : 'New to Converly?'} <button type="button" onClick={() => { setMode(isRegister ? 'signin' : 'register'); setError(''); setNotice('') }}>{isRegister ? 'Sign in' : 'Create an account'}</button></p>
         )}
         {profileSetup && <p className="auth-footnote">Your username reservation and profile are saved together in Firebase. The username cannot be claimed by another account.</p>}
       </section>
