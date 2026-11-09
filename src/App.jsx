@@ -7,178 +7,7 @@ import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
 import { isDesignatedAdminEmail } from './adminConfig'
 
-const initialConversations = [
-  {
-    id: 'alex',
-    avatarId: 'male-03',
-    name: 'Alex Morgan',
-    initials: 'AM',
-    tone: 2,
-    status: 'online',
-    typing: true,
-    preview: 'Perfect. I’ll review everything this afternoon.',
-    time: '10:42',
-    unread: 2,
-    pinned: true,
-    favorite: true,
-    archived: false,
-    messages: [
-      { id: 'a1', from: 'them', text: 'Hey! I’ve been refining the first concepts for the new project.', time: '9:18 AM' },
-      { id: 'a2', from: 'them', text: 'Just shared the updated direction with the team. Would love your thoughts when you have a moment.', time: '9:19 AM' },
-      { id: 'a3', from: 'me', text: 'These are looking great. The spacing feels much clearer now.', time: '9:24 AM', read: true },
-      { id: 'a4', from: 'them', type: 'file', fileName: 'Brand exploration.fig', fileMeta: 'Figma file · 4.8 MB', time: '9:26 AM' },
-      { id: 'a5', from: 'them', text: 'I’ve also added a few variations to the final page.', time: '9:27 AM' },
-      { id: 'a6', from: 'me', text: 'Perfect. I’ll review everything this afternoon and send over notes.', time: '9:31 AM', read: true },
-    ],
-  },
-  {
-    id: 'olivia',
-    avatarId: 'female-02',
-    name: 'Olivia Rhye',
-    initials: 'OR',
-    tone: 4,
-    status: 'online',
-    preview: 'That works for me. See you there!',
-    time: '10:18',
-    unread: 1,
-    pinned: true,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'o1', from: 'them', text: 'Are we still on for the coffee catch-up tomorrow?', time: '10:02 AM' },
-      { id: 'o2', from: 'me', text: 'Absolutely. I’ll send you the location in a bit.', time: '10:08 AM', read: true },
-      { id: 'o3', from: 'them', text: 'That works for me. See you there!', time: '10:18 AM' },
-    ],
-  },
-  {
-    id: 'noah',
-    avatarId: 'male-01',
-    name: 'Noah Williams',
-    initials: 'NW',
-    tone: 1,
-    status: 'offline',
-    preview: 'Sent you the updated notes.',
-    time: 'Yesterday',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'n1', from: 'them', text: 'I went through the feedback and made the changes we discussed.', time: 'Yesterday' },
-      { id: 'n2', from: 'them', text: 'Sent you the updated notes.', time: 'Yesterday' },
-    ],
-  },
-  {
-    id: 'emma',
-    avatarId: 'female-01',
-    name: 'Emma Thompson',
-    initials: 'ET',
-    tone: 3,
-    status: 'online',
-    preview: 'Could you take a look at this when free?',
-    time: 'Yesterday',
-    unread: 0,
-    pinned: false,
-    favorite: true,
-    archived: false,
-    messages: [
-      { id: 'e1', from: 'them', text: 'I have a small update to share with you.', time: 'Yesterday' },
-      { id: 'e2', from: 'them', text: 'Could you take a look at this when free?', time: 'Yesterday' },
-    ],
-  },
-  {
-    id: 'studio',
-    name: 'Studio Circle',
-    initials: 'SC',
-    tone: 5,
-    status: 'group',
-    members: '8 members',
-    preview: 'Mia: Added the final assets to the folder.',
-    time: 'Tue',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 's1', from: 'them', sender: 'Mia Chen', text: 'Added the final assets to the folder.', time: 'Tuesday' },
-      { id: 's2', from: 'me', text: 'Thanks, I’ll take a look.', time: 'Tuesday', read: true },
-    ],
-  },
-  {
-    id: 'james',
-    avatarId: 'male-05',
-    name: 'James Miller',
-    initials: 'JM',
-    tone: 6,
-    status: 'offline',
-    preview: 'Voice message · 0:24',
-    time: 'Mon',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'j1', from: 'them', text: 'Voice message · 0:24', time: 'Monday' },
-    ],
-  },
-  {
-    id: 'sophia',
-    avatarId: 'female-03',
-    name: 'Sophia Bennett',
-    initials: 'SB',
-    tone: 2,
-    status: 'offline',
-    preview: 'Thank you so much!',
-    time: 'Sun',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: true,
-    messages: [
-      { id: 'sb1', from: 'them', text: 'Thank you so much!', time: 'Sunday' },
-    ],
-  },
-]
 
-const MESSAGE_RETENTION_MS = 86400000
-
-const getConversationActivity = (conversation) => {
-  if (Number.isFinite(conversation.lastActivityAt)) return conversation.lastActivityAt
-  const lastMessageId = conversation.messages?.[conversation.messages.length - 1]?.id || ''
-  const timestampMatch = String(lastMessageId).match(/(?:m|img|voice|fwd|poll)-(\\d+)/)
-  return timestampMatch ? Number(timestampMatch[1]) : 0
-}
-
-// Treat every audio-backed message as a voice message, even if its type metadata differs.
-const isAudioMessage = (message) => message?.type === 'audio' || Boolean(message?.mediaUrl) || Boolean(message?.mimeType?.startsWith('audio/'))
-
-const composerEmojiOptions = ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😍','🥰','😘','😋','😎','🤩','🥳','🤔','🤗','🤭','😴','😭','😢','😡','😮','😱','🙏','👏','👍','👎','👌','✌️','🤝','🙌','💪','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💯','🔥','✨','🎉','🎂','🌹','☀️','🌙','⭐','☕','🍕','🎈','💡','✅','❌']
-
-const reactionOptions = [
-  { emoji: '👍', label: 'Like' },
-  { emoji: '❤️', label: 'Love' },
-  { emoji: '😂', label: 'Laugh' },
-  { emoji: '😮', label: 'Wow' },
-  { emoji: '😢', label: 'Sad' },
-  { emoji: '🙏', label: 'Thanks' },
-  { emoji: '🔥', label: 'Fire' },
-  { emoji: '🎉', label: 'Celebrate' },
-  { emoji: '👏', label: 'Clap' },
-  { emoji: '😍', label: 'Heart eyes' },
-  { emoji: '🤔', label: 'Thinking' },
-  { emoji: '🙌', label: 'Praise' },
-  { emoji: '💯', label: '100' },
-  { emoji: '👎', label: 'Dislike' },
-  { emoji: '😡', label: 'Angry' },
-  { emoji: '🤝', label: 'Handshake' },
-]
-
-const directoryPeople = [
-  { id: 'nina', avatarId: 'female-04', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
-  { id: 'daniel', avatarId: 'male-02', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
-  { id: 'maya', avatarId: 'female-05', name: 'Maya Chen', initials: 'MC', tone: 4, status: 'online' },
-  { id: 'ethan', avatarId: 'male-04', name: 'Ethan Brooks', initials: 'EB', tone: 5, status: 'offline' },
-]
 
 const avatarOptions = [
   { id: 'male-01', gender: 'male', label: 'Classic', skin: '#d3d3d0', hair: '#292929', shirt: '#666663', back: 'M14 31C12 13 21 5 32 5s20 8 18 26l-5 8H19Z', front: 'M15 25C16 11 23 7 32 7c10 0 17 8 17 19-5-2-9-6-11-11-6 6-13 9-23 10Z' },
@@ -367,10 +196,8 @@ function App({ profile, isAdmin = false }) {
   const canAccessAdmin = isDesignatedOwner && auth?.currentUser?.emailVerified === true && isAdmin
   const canSeeAdminEntry = isDesignatedOwner
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
-  const [conversations, setConversations] = useState(() => {
-    try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
-  })
-  const [activeId, setActiveId] = useState('alex')
+  const [conversations, setConversations] = useState([])
+  const [activeId, setActiveId] = useState('')
   const [view, setView] = useState('messages')
   const [loggingOut, setLoggingOut] = useState(false)
   const [search, setSearch] = useState('')
@@ -590,16 +417,10 @@ function App({ profile, isAdmin = false }) {
     localStorage.setItem('notification-compact-mode', String(compactMode))
   }, [compactMode])
 
-  // Browser preview persistence only; binary media is deliberately session-only.
+  // Remove conversations saved by the old local-only demo preview.
   useEffect(() => {
-    try {
-      const safeConversations = conversations.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.map(({ imageData, mediaUrl, ...message }) => message),
-      }))
-      localStorage.setItem('notification-conversations', JSON.stringify(safeConversations))
-    } catch { showToast('Local storage is full. Some recent changes may not persist.') }
-  }, [conversations])
+    localStorage.removeItem('notification-conversations')
+  }, [])
 
   useEffect(() => {
     setReplyTarget(null); setEditingMessageId(null); setSelectedMessageId(null)
@@ -816,14 +637,7 @@ function App({ profile, isAdmin = false }) {
       return
     }
 
-    const message = {
-      id: 'm-' + Date.now(), from: 'me', type: 'text', text,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: 'sent',
-      ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-    }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now', lastActivityAt: Date.now() } : item))
-    setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
+    showToast('This conversation is not synced yet. Add this person as a friend to send messages.')
   }
 
   const getMediaApiUrl = () => (String(import.meta.env.VITE_NOTIFICATION_API_URL || '').trim() || 'https://notification-api.mediatoolkit.workers.dev').replace(/\/+$/, '')
@@ -1460,21 +1274,6 @@ function App({ profile, isAdmin = false }) {
           </div>
         )}
 
-        {view !== 'archive' && view !== 'starred' && (
-          <div className="online-section">
-            <div className="section-label"><span>ONLINE NOW</span><span className="online-count">04</span></div>
-            <div className="online-people">
-              {[initialConversations[0], initialConversations[1], initialConversations[3], directoryPeople[2]].map((person) => (
-                <button className="online-person" key={person.id} onClick={() => startConversation(person)} title={person.name}>
-                  <Avatar person={person} size="online" showStatus />
-                  <span>{person.name.split(' ')[0]}</span>
-                </button>
-              ))}
-              <button className="online-more" onClick={() => { setView('contacts'); setListFilter('all') }}>+3</button>
-            </div>
-          </div>
-        )}
-
         <div className="conversation-list-wrap">
           <div className="section-label list-section-label">
             <span>{view === 'starred' ? 'SAVED CHATS' : view === 'archive' ? 'ARCHIVED' : view === 'contacts' ? 'ALL PEOPLE' : 'RECENT'}</span>
@@ -1783,7 +1582,7 @@ function App({ profile, isAdmin = false }) {
                 </span>}
                 {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Synced conversations only</span></div>
             </form>
           </section>
         ) : (
