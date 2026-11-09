@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth'
+import { createUserWithEmailAndPassword, GoogleAuthProvider, sendPasswordResetEmail, signInWithPopup, signInWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth'
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
 import './AuthScreen.css'
+
+const isGmailAddress = (value) => new RegExp('^[^\\s@]+@gmail\\.com$', 'i').test(String(value || '').trim())
 
 const explainAuthError = (error) => {
   switch (error?.code) {
@@ -13,7 +15,14 @@ const explainAuthError = (error) => {
     case 'auth/wrong-password':
     case 'auth/user-not-found': return 'The email or password is incorrect.'
     case 'auth/too-many-requests': return 'Too many attempts. Wait a little and try again.'
-    case 'auth/operation-not-allowed': return 'Email/password sign-in is not enabled in Firebase Authentication yet.'
+    case 'auth/operation-not-allowed': return 'This sign-in method is not enabled in Firebase Authentication yet.'
+    case 'auth/popup-closed-by-user': return 'Google sign-in was cancelled. You can try again whenever you are ready.'
+    case 'auth/popup-blocked': return 'Your browser blocked the Google sign-in popup. Allow popups for this site and try again.'
+    case 'auth/cancelled-popup-request': return 'A Google sign-in window is already open. Finish that window or try again.'
+    case 'auth/account-exists-with-different-credential': return 'An account already exists with this Gmail address. Sign in using your existing password first.'
+    case 'auth/unauthorized-domain': return 'This website domain is not authorized in Firebase Authentication. Add the current domain under Authentication → Settings → Authorized domains.'
+    case 'auth/credential-already-in-use': return 'This Google account is already linked to another Converly account.'
+    case 'auth/web-storage-unsupported': return 'Your browser is blocking the storage required for Google sign-in. Enable cookies/site storage and try again.'
     case 'auth/network-request-failed': return 'Network error. Check your internet connection.'
     default: return error?.message || 'Something went wrong. Please try again.'
   }
@@ -28,6 +37,27 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(initialError)
   const [notice, setNotice] = useState('')
+
+  const handleGoogleSignIn = async () => {
+    setError('')
+    setNotice('')
+    setBusy(true)
+    try {
+      const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+      const credential = await signInWithPopup(auth, provider)
+      const googleUser = credential.user
+      if (!isGmailAddress(googleUser.email)) {
+        await signOut(auth)
+        throw new Error('Only Google accounts ending in @gmail.com can use Converly. Choose a personal Gmail account.')
+      }
+      // AuthGate loads existing profiles or routes first-time users to profile setup.
+    } catch (caught) {
+      setError(explainAuthError(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const saveFirstProfile = async (currentUser) => {
     const cleanName = displayName.trim()
@@ -71,14 +101,18 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
     setNotice('')
     setBusy(true)
     try {
+      const normalizedEmail = String(user?.email || email).trim().toLowerCase()
+      if (!isGmailAddress(normalizedEmail)) {
+        throw new Error('Only Gmail addresses ending in @gmail.com can register or sign in to Converly.')
+      }
       if (user) {
         await saveFirstProfile(user)
       } else if (mode === 'register') {
         if (password.length < 6) throw new Error('Use a password with at least 6 characters.')
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
+        const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
         await saveFirstProfile(credential.user)
       } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password)
+        await signInWithEmailAndPassword(auth, normalizedEmail, password)
       }
     } catch (caught) {
       setError(explainAuthError(caught))
@@ -90,10 +124,12 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
   const handleResetPassword = async () => {
     setError('')
     setNotice('')
-    if (!email.trim()) { setError('Enter your email address first.'); return }
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) { setError('Enter your Gmail address first.'); return }
+    if (!isGmailAddress(normalizedEmail)) { setError('Password reset is available only for @gmail.com addresses.'); return }
     setBusy(true)
     try {
-      await sendPasswordResetEmail(auth, email.trim())
+      await sendPasswordResetEmail(auth, normalizedEmail)
       setNotice('Password reset email sent. Check your inbox.')
     } catch (caught) {
       setError(explainAuthError(caught))
@@ -114,6 +150,15 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
         <h1>{profileSetup ? 'Create your profile' : isRegister ? 'Create your account' : 'Welcome back'}</h1>
         <p className="auth-description">{profileSetup ? 'Choose your display name and a username. Your username is permanent after this step.' : isRegister ? 'A calmer place for the conversations that matter.' : 'Sign in to continue to your conversations.'}</p>
 
+        {!profileSetup && (
+          <>
+            <button className="auth-google-button" type="button" onClick={handleGoogleSignIn} disabled={busy}>
+              <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.91c-.58 2.96-2.26 5.48-4.75 7.18l7.73 6C44.4 37.96 46.98 31.8 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.53 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.45-4.89 2.3-8.17 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>
+              Continue with Google
+            </button>
+            <div className="auth-divider"><span>OR CONTINUE WITH EMAIL</span></div>
+          </>
+        )}
         <form className="auth-form" onSubmit={handleSubmit}>
           {profileSetup ? (
             <>
@@ -123,7 +168,7 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
             </>
           ) : (
             <>
-              <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+              <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@gmail.com" autoComplete="email" autoCapitalize="none" required /><small>Use a Gmail address ending in @gmail.com.</small></label>
               <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} autoComplete={isRegister ? 'new-password' : 'current-password'} required /></label>
             </>
           )}
