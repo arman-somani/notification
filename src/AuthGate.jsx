@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth, db, firebaseReady, missingFirebaseConfig } from './firebase/client'
@@ -6,9 +6,12 @@ import AuthScreen from './AuthScreen'
 import LandingPage from './LandingPage'
 import ChatApp from './App'
 
+const isGmailAddress = (value) => /^[^\\s@]+@gmail\\.com$/i.test(String(value || '').trim())
+
 export default function AuthGate() {
   const [showAuth, setShowAuth] = useState(false)
   const [session, setSession] = useState({ loading: true, user: null, profile: null, error: '' })
+  const rejectedAccountMessage = useRef('')
 
   useEffect(() => {
     if (!firebaseReady || !auth || !db) {
@@ -20,10 +23,19 @@ export default function AuthGate() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!active) return
       if (!user) {
-        setSession({ loading: false, user: null, profile: null, error: '' })
+        setSession({ loading: false, user: null, profile: null, error: rejectedAccountMessage.current })
         return
       }
 
+      if (!isGmailAddress(user.email)) {
+        rejectedAccountMessage.current = 'Only @gmail.com accounts can use Converly. Please sign in with a Gmail address.'
+        setShowAuth(true)
+        try { await signOut(auth) } catch { /* The app remains locked out unless a Gmail account signs in. */ }
+        if (active) setSession({ loading: false, user: null, profile: null, error: rejectedAccountMessage.current })
+        return
+      }
+
+      rejectedAccountMessage.current = ''
       setSession({ loading: true, user, profile: null, error: '' })
       try {
         const profileSnapshot = await getDoc(doc(db, 'users', user.uid))
@@ -72,7 +84,7 @@ export default function AuthGate() {
 
   if (!session.user || !session.profile) {
     if (!session.user && !showAuth) return <LandingPage onGetStarted={() => setShowAuth(true)} />
-    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => setShowAuth(false) : undefined} />
+    return <AuthScreen user={session.user} initialError={session.error} onProfileSaved={handleProfileSaved} onBack={!session.user ? () => { rejectedAccountMessage.current = ''; setSession({ loading: false, user: null, profile: null, error: '' }); setShowAuth(false) } : undefined} />
   }
 
   return <ChatApp profile={session.profile} onLogout={() => signOut(auth)} />
