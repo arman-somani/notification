@@ -901,7 +901,7 @@ function App({ profile }) {
     setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
 
-  const getMediaApiUrl = () => String(import.meta.env.VITE_NOTIFICATION_API_URL || 'https://notification-api.mediatoolkit.workers.dev').trim().replace(/\/+$/, '')
+  const getMediaApiUrl = () => (String(import.meta.env.VITE_NOTIFICATION_API_URL || '').trim() || 'https://notification-api.mediatoolkit.workers.dev').replace(/\/+$/, '')
 
   const openSharedImage = async (message) => {
     const apiUrl = getMediaApiUrl()
