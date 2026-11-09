@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createUserWithEmailAndPassword, GoogleAuthProvider, sendPasswordResetEmail, signInWithPopup, signInWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth'
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase/client'
@@ -42,6 +42,10 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(initialError)
   const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (user) { setMode('profile'); setProfileStep(1) }
+  }, [user])
 
   const handleGoogleSignIn = async () => {
     setError('')
@@ -121,8 +125,10 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
         await saveFirstProfile(user)
       } else if (mode === 'register') {
         if (password.length < 6) throw new Error('Use a password with at least 6 characters.')
-        const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
-        await saveFirstProfile(credential.user)
+        await createUserWithEmailAndPassword(auth, normalizedEmail, password)
+        setMode('profile')
+        setProfileStep(1)
+        setNotice('Account created. Complete your profile details next.')
       } else {
         await signInWithEmailAndPassword(auth, normalizedEmail, password)
       }
