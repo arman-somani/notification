@@ -1,4 +1,4 @@
-# Notification media API (Cloudflare Worker)
+# Converly media API (Cloudflare Worker)
 
 This Worker uses ImageKit for chat images, not Firebase Storage. It verifies Firebase ID tokens, checks Firestore conversation membership, uploads private ImageKit files, and streams image bytes through an authenticated one-time-open endpoint.
 
