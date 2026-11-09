@@ -11,7 +11,8 @@
 - Firebase Authentication: identity, email verification, password reset, optional MFA.
 - Cloud Firestore: profiles, username index, conversations, membership, messages, reactions, polls, reports, notifications, stories, and audit records.
 - Firebase Realtime Database: presence connections and ephemeral typing state.
-- Cloud Storage: all shared images are view-once by default plus voice-note audio; strict membership, size, and MIME checks.
+- ImageKit via Cloudflare Worker: private shared images, with Firebase ID-token verification, Firestore membership checks, and authenticated one-time image streaming.
+- Firebase Storage: not used for chat images in the current Spark-plan setup. Voice-note storage remains a separate implementation task.
 - Cloud Functions: trusted role changes, scheduled sends, expiry cleanup, push fan-out, reports, admin operations, and view-once authorization/proxy.
 - Firebase Cloud Messaging: browser push.
 - Firebase App Check: app attestation and abuse reduction.
@@ -41,10 +42,9 @@
 Use connection-scoped presence and onDisconnect cleanup. Typing state is ephemeral and should have a short TTL.
 
 ## Storage paths
-- All images use the protected view-once image path; no normal image-download path is exposed.
-- conversations/{conversationId}/voice/{messageId}/{fileName}
-- conversations/{conversationId}/view-once/{messageId}/{fileName}
-- stories/{uid}/{storyId}/{fileName}
+- Chat images are stored as private ImageKit assets under /notification/{conversationId}/ and are never delivered through permanent public URLs.
+- The Cloudflare Worker exposes authenticated /media/upload and /media/open routes. It verifies Firebase ID tokens and conversation membership using Firestore Security Rules.
+- Firebase Storage voice and story paths remain separate and must not be assumed to be active until configured and tested.
 
 Every shared image is view-once by default. View-once paths must deny direct client reads. A trusted backend must enforce atomic one-open consumption, ensure the sender cannot consume the recipient's open, and avoid reusable public URLs.
 
