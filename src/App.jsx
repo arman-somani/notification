@@ -5,139 +5,6 @@ import { auth, db } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 
-const initialConversations = [
-  {
-    id: 'alex',
-    avatarId: 'male-03',
-    name: 'Alex Morgan',
-    initials: 'AM',
-    tone: 2,
-    status: 'online',
-    typing: true,
-    preview: 'Perfect. I’ll review everything this afternoon.',
-    time: '10:42',
-    unread: 2,
-    pinned: true,
-    favorite: true,
-    archived: false,
-    messages: [
-      { id: 'a1', from: 'them', text: 'Hey! I’ve been refining the first concepts for the new project.', time: '9:18 AM' },
-      { id: 'a2', from: 'them', text: 'Just shared the updated direction with the team. Would love your thoughts when you have a moment.', time: '9:19 AM' },
-      { id: 'a3', from: 'me', text: 'These are looking great. The spacing feels much clearer now.', time: '9:24 AM', read: true },
-      { id: 'a4', from: 'them', type: 'file', fileName: 'Brand exploration.fig', fileMeta: 'Figma file · 4.8 MB', time: '9:26 AM' },
-      { id: 'a5', from: 'them', text: 'I’ve also added a few variations to the final page.', time: '9:27 AM' },
-      { id: 'a6', from: 'me', text: 'Perfect. I’ll review everything this afternoon and send over notes.', time: '9:31 AM', read: true },
-    ],
-  },
-  {
-    id: 'olivia',
-    avatarId: 'female-02',
-    name: 'Olivia Rhye',
-    initials: 'OR',
-    tone: 4,
-    status: 'online',
-    preview: 'That works for me. See you there!',
-    time: '10:18',
-    unread: 1,
-    pinned: true,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'o1', from: 'them', text: 'Are we still on for the coffee catch-up tomorrow?', time: '10:02 AM' },
-      { id: 'o2', from: 'me', text: 'Absolutely. I’ll send you the location in a bit.', time: '10:08 AM', read: true },
-      { id: 'o3', from: 'them', text: 'That works for me. See you there!', time: '10:18 AM' },
-    ],
-  },
-  {
-    id: 'noah',
-    avatarId: 'male-01',
-    name: 'Noah Williams',
-    initials: 'NW',
-    tone: 1,
-    status: 'offline',
-    preview: 'Sent you the updated notes.',
-    time: 'Yesterday',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'n1', from: 'them', text: 'I went through the feedback and made the changes we discussed.', time: 'Yesterday' },
-      { id: 'n2', from: 'them', text: 'Sent you the updated notes.', time: 'Yesterday' },
-    ],
-  },
-  {
-    id: 'emma',
-    avatarId: 'female-01',
-    name: 'Emma Thompson',
-    initials: 'ET',
-    tone: 3,
-    status: 'online',
-    preview: 'Could you take a look at this when free?',
-    time: 'Yesterday',
-    unread: 0,
-    pinned: false,
-    favorite: true,
-    archived: false,
-    messages: [
-      { id: 'e1', from: 'them', text: 'I have a small update to share with you.', time: 'Yesterday' },
-      { id: 'e2', from: 'them', text: 'Could you take a look at this when free?', time: 'Yesterday' },
-    ],
-  },
-  {
-    id: 'studio',
-    name: 'Studio Circle',
-    initials: 'SC',
-    tone: 5,
-    status: 'group',
-    members: '8 members',
-    preview: 'Mia: Added the final assets to the folder.',
-    time: 'Tue',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 's1', from: 'them', sender: 'Mia Chen', text: 'Added the final assets to the folder.', time: 'Tuesday' },
-      { id: 's2', from: 'me', text: 'Thanks, I’ll take a look.', time: 'Tuesday', read: true },
-    ],
-  },
-  {
-    id: 'james',
-    avatarId: 'male-05',
-    name: 'James Miller',
-    initials: 'JM',
-    tone: 6,
-    status: 'offline',
-    preview: 'Voice message · 0:24',
-    time: 'Mon',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: false,
-    messages: [
-      { id: 'j1', from: 'them', text: 'Voice message · 0:24', time: 'Monday' },
-    ],
-  },
-  {
-    id: 'sophia',
-    avatarId: 'female-03',
-    name: 'Sophia Bennett',
-    initials: 'SB',
-    tone: 2,
-    status: 'offline',
-    preview: 'Thank you so much!',
-    time: 'Sun',
-    unread: 0,
-    pinned: false,
-    favorite: false,
-    archived: true,
-    messages: [
-      { id: 'sb1', from: 'them', text: 'Thank you so much!', time: 'Sunday' },
-    ],
-  },
-]
-
 const MESSAGE_RETENTION_MS = 86400000
 
 const getConversationActivity = (conversation) => {
@@ -169,13 +36,6 @@ const reactionOptions = [
   { emoji: '👎', label: 'Dislike' },
   { emoji: '😡', label: 'Angry' },
   { emoji: '🤝', label: 'Handshake' },
-]
-
-const directoryPeople = [
-  { id: 'nina', avatarId: 'female-04', name: 'Nina Patel', initials: 'NP', tone: 3, status: 'online' },
-  { id: 'daniel', avatarId: 'male-02', name: 'Daniel Kim', initials: 'DK', tone: 1, status: 'offline' },
-  { id: 'maya', avatarId: 'female-05', name: 'Maya Chen', initials: 'MC', tone: 4, status: 'online' },
-  { id: 'ethan', avatarId: 'male-04', name: 'Ethan Brooks', initials: 'EB', tone: 5, status: 'offline' },
 ]
 
 const avatarOptions = [
@@ -361,13 +221,8 @@ const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__'
 
 function App({ profile }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
-  const [conversations, setConversations] = useState(() => {
-    // Authenticated accounts must never see sample conversations or another
-    // browser's cached conversation data as if it were real chat history.
-    if (auth?.currentUser?.uid) return []
-    try { const saved = localStorage.getItem('notification-conversations'); return saved ? JSON.parse(saved) : initialConversations } catch { return initialConversations }
-  })
-  const [activeId, setActiveId] = useState(() => auth?.currentUser?.uid ? '' : 'alex')
+  const [conversations, setConversations] = useState([])
+  const [activeId, setActiveId] = useState('')
   const [view, setView] = useState('messages')
   const [loggingOut, setLoggingOut] = useState(false)
   const [search, setSearch] = useState('')
@@ -591,16 +446,11 @@ function App({ profile }) {
     localStorage.setItem('notification-compact-mode', String(compactMode))
   }, [compactMode])
 
-  // Browser preview persistence only; binary media is deliberately session-only.
+  // Remove conversation snapshots saved by the old sample-data preview.
+  // Conversations now load only from the signed-in user's Firebase friendships.
   useEffect(() => {
-    try {
-      const safeConversations = conversations.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.map(({ imageData, imageUrl, mediaUrl, ...message }) => message),
-      }))
-      localStorage.setItem('notification-conversations', JSON.stringify(safeConversations))
-    } catch { showToast('Local storage is full. Some recent changes may not persist.') }
-  }, [conversations])
+    localStorage.removeItem('notification-conversations')
+  }, [])
 
   useEffect(() => {
     setReplyTarget(null); setEditingMessageId(null); setSelectedMessageId(null)
