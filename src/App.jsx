@@ -1029,6 +1029,7 @@ function App({ profile }) {
         }
         : item))
       setReplyTarget(null)
+      let previewUpdated = true
       try {
         await setDoc(doc(db, 'conversations', conversationId), {
           lastMessageAt: serverTimestamp(),
@@ -1037,9 +1038,9 @@ function App({ profile }) {
           updatedAt: serverTimestamp(),
         }, { merge: true })
       } catch {
-        showToast('Photo sent. The inbox preview could not be updated.')
+        previewUpdated = false
       }
-      showToast('Photo sent.')
+      showToast(previewUpdated ? 'Photo sent.' : 'Photo sent, but the inbox preview could not be updated.')
     } catch (error) {
       showToast(error?.message || 'Could not send the image. Please try again.')
     }
