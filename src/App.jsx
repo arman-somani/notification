@@ -567,7 +567,6 @@ function App({ profile, onLogout }) {
             })
             return [...byId.values()]
           })
-          setActiveId((current) => current || validContacts[0]?.id || '')
         }
       } catch (error) {
         if (!cancelled) setDiscoveryError(error?.code === 'permission-denied'
@@ -623,7 +622,7 @@ function App({ profile, onLogout }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  const activeConversation = conversations.find((conversation) => conversation.id === activeId)
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
@@ -1278,7 +1277,7 @@ function App({ profile, onLogout }) {
 
         {view !== 'archive' && view !== 'starred' && (
           <div className="online-section">
-            <div className="section-label"><span>ONLINE NOW</span><span className="online-count">04</span></div>
+            <div className="section-label"><span>YOUR FRIENDS</span><span className="online-count">{friendContacts.length}</span></div>
             <div className="online-people">
               {friendContacts.slice(0, 4).map((person) => (
                 <button className="online-person" key={person.id} onClick={() => startConversation(person)} title={person.name}>
@@ -1588,7 +1587,7 @@ function App({ profile, onLogout }) {
                 </span>}
                 {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Local preview · not synced</span></div>
+              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Text messages sync across devices</span></div>
             </form>
           </section>
         ) : (
