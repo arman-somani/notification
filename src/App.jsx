@@ -631,8 +631,30 @@ function App({ profile, isAdmin = false }) {
     const uid = auth?.currentUser?.uid
     const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
     if (isAcceptedFriend) {
-      const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+      // Always use the same deterministic ID on both devices. Create the parent
+      // conversation before writing a message because Firestore rules validate
+      // membership against that parent document.
+      const conversationId = directConversationId(uid, activeId)
+      const conversationRef = doc(db, 'conversations', conversationId)
       try {
+        await runTransaction(db, async (transaction) => {
+          const conversationSnapshot = await transaction.get(conversationRef)
+          if (!conversationSnapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, activeId].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+            return
+          }
+
+          const memberIds = conversationSnapshot.data().memberIds || []
+          if (!memberIds.includes(uid) || !memberIds.includes(activeId)) {
+            throw new Error('This conversation has unexpected members. Message was not sent.')
+          }
+        })
+
         const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
         await setDoc(messageRef, {
           senderId: uid,
@@ -641,17 +663,20 @@ function App({ profile, isAdmin = false }) {
           createdAt: serverTimestamp(),
           ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
         })
-        await setDoc(doc(db, 'conversations', conversationId), {
+        await setDoc(conversationRef, {
           lastMessageAt: serverTimestamp(),
           lastMessagePreview: text.slice(0, 160),
           updatedAt: serverTimestamp(),
         }, { merge: true })
+        setConversations((items) => items.map((item) => item.id === activeId
+          ? { ...item, firebaseConversationId: conversationId, preview: text, time: 'Now', lastActivityAt: Date.now() }
+          : item))
         setMessageText('')
         setReplyTarget(null)
         messageInputRef.current?.focus()
       } catch (error) {
         showToast(error?.code === 'permission-denied'
-          ? 'Firebase denied this message. Check that the latest Firestore rules are deployed.'
+          ? 'Firebase denied this message. Publish the latest Firestore rules in Firebase Console, then try again.'
           : error?.message || 'Could not send message. Please try again.')
       }
       return
