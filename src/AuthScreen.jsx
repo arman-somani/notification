@@ -34,6 +34,11 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState(user?.displayName || '')
   const [username, setUsername] = useState('')
+  const [profileStep, setProfileStep] = useState(1)
+  const [gender, setGender] = useState('male')
+  const [avatarId, setAvatarId] = useState('male-01')
+  const avatarLabels = ['Classic', 'Curly', 'Side part', 'Buzz cut', 'Wavy', 'Textured', 'Modern', 'Tousled', 'Sleek', 'Casual']
+  const avatarChoices = avatarLabels.map((label, index) => ({ id: gender + '-' + String(index + 1).padStart(2, '0'), label }))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(initialError)
   const [notice, setNotice] = useState('')
@@ -77,7 +82,8 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
       transaction.set(userRef, {
         displayName: cleanName,
         username: normalizedUsername,
-        avatarId: 'male-01',
+        gender,
+        avatarId,
         bio: '',
         privacy: { whoCanMessage: 'everyone', whoCanSeeLastSeen: 'contacts', whoCanAddToGroups: 'contacts', discoverable: true },
         createdAt: serverTimestamp(),
@@ -89,7 +95,8 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
     onProfileSaved({
       displayName: cleanName,
       username: normalizedUsername,
-      avatarId: 'male-01',
+      gender,
+      avatarId,
       bio: '',
       privacy: { whoCanMessage: 'everyone', whoCanSeeLastSeen: 'contacts', whoCanAddToGroups: 'contacts', discoverable: true },
     })
@@ -104,6 +111,11 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
       const normalizedEmail = String(user?.email || email).trim().toLowerCase()
       if (!isGmailAddress(normalizedEmail)) {
         throw new Error('Only Gmail addresses ending in @gmail.com can register or sign in to Converly.')
+      }
+      if (user && profileStep === 1) {
+        setProfileStep(2)
+        setBusy(false)
+        return
       }
       if (user) {
         await saveFirstProfile(user)
@@ -146,9 +158,9 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
       <section className="auth-card">
         {onBack && <button className="auth-back-button" type="button" onClick={onBack}>← Back to home</button>}
         <div className="auth-brand"><span className="auth-brand-mark">C</span><span>converly<span>.</span></span></div>
-        <p className="auth-eyebrow">{profileSetup ? 'ONE LAST STEP' : 'YOUR PRIVATE SPACE'}</p>
-        <h1>{profileSetup ? 'Create your profile' : isRegister ? 'Create your account' : 'Welcome back'}</h1>
-        <p className="auth-description">{profileSetup ? 'Choose your display name and a username. Your username is permanent after this step.' : isRegister ? 'A calmer place for the conversations that matter.' : 'Sign in to continue to your conversations.'}</p>
+        <p className="auth-eyebrow">{profileSetup ? (profileStep === 1 ? 'STEP 1 OF 2' : 'STEP 2 OF 2') : 'YOUR PRIVATE SPACE'}</p>
+        <h1>{profileSetup ? (profileStep === 1 ? 'Create your profile' : 'Choose your avatar') : isRegister ? 'Create your account' : 'Welcome back'}</h1>
+        <p className="auth-description">{profileSetup ? (profileStep === 1 ? 'Choose your display name and permanent username.' : 'Select your gender and one of the 10 matching avatars.') : isRegister ? 'A calmer place for the conversations that matter.' : 'Sign in to continue to your conversations.'}</p>
 
         {!profileSetup && (
           <>
@@ -160,7 +172,18 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
           </>
         )}
         <form className="auth-form" onSubmit={handleSubmit}>
-          {profileSetup ? (
+          {profileSetup && profileStep === 2 ? (
+            <div className="auth-avatar-step">
+              <div className="auth-gender-options">
+                <button type="button" className={gender === 'male' ? 'selected' : ''} onClick={() => { setGender('male'); setAvatarId('male-01') }}>Male</button>
+                <button type="button" className={gender === 'female' ? 'selected' : ''} onClick={() => { setGender('female'); setAvatarId('female-01') }}>Female</button>
+              </div>
+              <div className="auth-avatar-grid">
+                {avatarChoices.map((avatar, index) => <button type="button" key={avatar.id} className={avatarId === avatar.id ? 'selected' : ''} onClick={() => setAvatarId(avatar.id)}><span className={'auth-avatar-preview auth-avatar-' + gender}><b>{gender === 'male' ? '♂' : '♀'}</b></span><strong>{avatar.label}</strong><small>Avatar {index + 1}</small></button>)}
+              </div>
+              <button type="button" className="auth-back-step" onClick={() => setProfileStep(1)}>← Back to profile details</button>
+            </div>
+          ) : profileSetup ? (
             <>
               <label>Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={48} autoComplete="name" required /></label>
               <label>Username<div className="auth-username-input"><span>@</span><input value={username} onChange={(event) => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20))} minLength={3} maxLength={20} autoComplete="username" required /></div><small>3–20 lowercase letters, numbers or underscores. Cannot be changed later.</small></label>
@@ -174,14 +197,14 @@ export default function AuthScreen({ user, initialError = '', onProfileSaved, on
           )}
           {error && <p className="auth-message auth-error" role="alert">{error}</p>}
           {notice && <p className="auth-message auth-notice" role="status">{notice}</p>}
-          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait…' : profileSetup ? 'Save permanent username' : isRegister ? 'Create account' : 'Sign in'}</button>
+          <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait…' : profileSetup ? (profileStep === 1 ? 'Continue to gender & avatar' : 'Create my profile') : isRegister ? 'Create account' : 'Sign in'}</button>
         </form>
 
         {!profileSetup && !isRegister && <button className="auth-text-button" type="button" onClick={handleResetPassword} disabled={busy}>Forgot password?</button>}
         {!profileSetup && (
           <p className="auth-switch">{isRegister ? 'Already have an account?' : 'New to Converly?'} <button type="button" onClick={() => { setMode(isRegister ? 'signin' : 'register'); setError(''); setNotice('') }}>{isRegister ? 'Sign in' : 'Create an account'}</button></p>
         )}
-        {profileSetup && <p className="auth-footnote">Your username reservation and profile are saved together in Firebase. The username cannot be claimed by another account.</p>}
+        {profileSetup && <p className="auth-footnote">Your username, gender and avatar are saved to your Firebase profile. Your username cannot be claimed by another account.</p>}
       </section>
     </main>
   )
