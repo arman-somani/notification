@@ -664,6 +664,29 @@ function App({ profile, onLogout }) {
     })
     return unsubscribe
   }, [activeId, friendContacts, auth?.currentUser?.uid])
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || friendContacts.length === 0) return undefined
+    const unsubscribers = friendContacts.map((person) => {
+      const conversationId = directConversationId(uid, person.id)
+      return onSnapshot(doc(db, 'conversations', conversationId), (snapshot) => {
+        if (!snapshot.exists()) return
+        const data = snapshot.data()
+        const lastMessageAt = data.lastMessageAt?.toDate ? data.lastMessageAt.toDate() : null
+        setConversations((items) => items.map((item) => item.id === person.id ? {
+          ...item,
+          firebaseConversationId: conversationId,
+          preview: data.lastMessagePreview || item.preview || 'Start a conversation',
+          time: lastMessageAt ? lastMessageAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
+          lastActivityAt: lastMessageAt ? lastMessageAt.getTime() : item.lastActivityAt || 0,
+        } : item))
+      }, (error) => {
+        if (error?.code !== 'permission-denied') showToast(error?.message || 'Could not update the inbox.')
+      })
+    })
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts, auth?.currentUser?.uid])
+
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
     ...friendContacts.filter((person) => !conversations.some((item) => item.id === person.id)),
