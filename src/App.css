@@ -1413,3 +1413,30 @@
 @media (max-width: 390px) {
   .chat-header-actions .icon-button:nth-child(2) { display: inline-grid; }
 }
+
+
+/* Visible sign-out action in Settings → Account. */
+.settings-account-actions .setting-row { align-items: center; }
+.settings-logout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid #c94f4f;
+  border-radius: 9px;
+  background: transparent;
+  color: #c94f4f;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, opacity .18s ease;
+}
+.settings-logout-button:hover:not(:disabled) { background: #c94f4f; color: #fff; }
+.settings-logout-button:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 560px) {
+  .settings-account-actions .setting-row { flex-wrap: wrap; }
+  .settings-logout-button { margin-left: auto; }
+}
