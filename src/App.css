@@ -1466,3 +1466,33 @@
   .app-shell { --font-body: 14px; --font-small: 12px; --font-caption: 11px; }
   .app-shell .composer-hint { display: none; }
 }
+
+
+/* Account sign-out action in Settings */
+.settings-account-actions .setting-row { align-items: center; }
+.settings-logout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--danger, #d65b5b);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--danger, #c94f4f);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, opacity .18s ease;
+}
+.settings-logout-button:hover:not(:disabled) {
+  background: var(--danger, #d65b5b);
+  color: #fff;
+}
+.settings-logout-button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 560px) {
+  .settings-account-actions .setting-row { flex-wrap: wrap; }
+  .settings-logout-button { margin-left: auto; }
+}
