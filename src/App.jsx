@@ -453,7 +453,12 @@ function App({ profile, isAdmin = false }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  const activeConversationMatch = conversations.find((conversation) => conversation.id === activeId) || conversations[0] || null
+  // Friend contacts can arrive from the acceptance flow before the inbox listener.
+  // Normalize the shape so the chat view never dereferences a missing messages array.
+  const activeConversation = activeConversationMatch
+    ? { ...activeConversationMatch, messages: Array.isArray(activeConversationMatch.messages) ? activeConversationMatch.messages : [] }
+    : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
@@ -1236,8 +1241,34 @@ function App({ profile, isAdmin = false }) {
         const senderProfile = await getDoc(doc(db, 'users', request.senderId))
         if (senderProfile.exists()) {
           const data = senderProfile.data()
-          const name = data.displayName || data.username
-          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
+          const name = data.displayName || data.username || 'Converly user'
+          const acceptedContact = {
+            id: request.senderId,
+            name,
+            username: data.username || '',
+            avatarId: data.avatarId,
+            initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+            status: 'offline',
+            tone: 2,
+            preview: 'Start a conversation',
+            time: '',
+            unread: 0,
+            pinned: false,
+            favorite: false,
+            archived: false,
+            messages: [],
+          }
+          // Update both sources of UI state together. This avoids a brief
+          // selected-contact-without-chat-state race while the contacts effect runs.
+          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), acceptedContact])
+          setConversations((items) => {
+            const existing = items.find((item) => item.id === request.senderId)
+            return existing
+              ? items.map((item) => item.id === request.senderId
+                ? { ...acceptedContact, ...item, messages: Array.isArray(item.messages) ? item.messages : [] }
+                : item)
+              : [...items, acceptedContact]
+          })
         }
         showToast('Friend request accepted')
       } else {
