@@ -48,8 +48,10 @@ service cloud.firestore {
       allow update: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'avatarId', 'bio', 'privacy', 'updatedAt'])
+          .hasOnly(['displayName', 'avatarId', 'gender', 'bio', 'privacy', 'updatedAt'])
         && request.resource.data.username == resource.data.username
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['gender'])
+          || request.resource.data.gender in ['male', 'female'])
         && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
       allow delete: if false;
 
