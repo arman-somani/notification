@@ -289,8 +289,9 @@ function App({ profile, isAdmin = false }) {
   const [profileName, setProfileName] = useState(() => profile?.displayName || localStorage.getItem('notification-display-name') || 'Your workspace')
   const [profileAvatar, setProfileAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
-  const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
-  const [avatarPickerGender, setAvatarPickerGender] = useState(() => (localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male')
+  const [savingAvatar, setSavingAvatar] = useState(false)
+  const [draftAvatar, setDraftAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
+  const [avatarPickerGender, setAvatarPickerGender] = useState(() => (profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male')
   const messageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -675,15 +676,31 @@ function App({ profile, isAdmin = false }) {
   }
 
   const openAvatarPicker = () => {
+    const currentAvatar = profileAvatar || profile?.avatarId || 'male-01'
+    setDraftAvatar(currentAvatar)
+    setAvatarPickerGender(currentAvatar.startsWith('female') ? 'female' : 'male')
     setProfileMenuOpen(false)
-    showToast('Profile avatars are preset and cannot be changed.')
+    setShowAvatarPicker(true)
   }
 
-  const saveAvatarSelection = () => {
-    setProfileAvatar(draftAvatar)
-    localStorage.setItem('notification-profile-avatar', draftAvatar)
-    setShowAvatarPicker(false)
-    showToast('Your avatar has been updated')
+  const saveAvatarSelection = async () => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || savingAvatar) {
+      showToast('Please sign in again before changing your avatar.')
+      return
+    }
+    setSavingAvatar(true)
+    try {
+      await setDoc(doc(db, 'users', uid), { avatarId: draftAvatar, updatedAt: serverTimestamp() }, { merge: true })
+      setProfileAvatar(draftAvatar)
+      localStorage.setItem('notification-profile-avatar', draftAvatar)
+      setShowAvatarPicker(false)
+      showToast('Your avatar has been updated')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firebase denied the avatar update. Check the deployed Firestore rules.' : error?.message || 'Could not update your avatar. Please try again.')
+    } finally {
+      setSavingAvatar(false)
+    }
   }
 
   useEffect(() => {
@@ -1491,6 +1508,12 @@ function App({ profile, isAdmin = false }) {
             </div>
             <div className="settings-content">
               <div className="settings-section settings-account-actions">
+                <div className="settings-section-title"><strong>Profile</strong><span>Personalize how people see you on Converly</span></div>
+                <div className="setting-row profile-avatar-setting">
+                  <Avatar person={{ avatarId: profileAvatar }} size="lg" />
+                  <span className="setting-copy"><strong>Profile avatar</strong><small>Choose a different illustration anytime</small></span>
+                  <button className="settings-logout-button" type="button" onClick={openAvatarPicker}>Change avatar</button>
+                </div>
                 <div className="settings-section-title"><strong>Account</strong><span>Manage your Converly session</span></div>
                 <div className="setting-row">
                   <span className="setting-icon"><Icon name="logout" /></span>
@@ -1816,7 +1839,7 @@ function App({ profile, isAdmin = false }) {
             <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from the 10 preset avatars. You can change your selection anytime.</div>
             <div className="avatar-picker-actions">
               <button className="secondary-button" onClick={() => setShowAvatarPicker(false)}>Cancel</button>
-              <button className="primary-button" onClick={saveAvatarSelection}><Icon name="check" size={15} /> Use this avatar</button>
+              <button className="primary-button" onClick={saveAvatarSelection} disabled={savingAvatar}>{savingAvatar ? 'Saving…' : <><Icon name="check" size={15} /> Use this avatar</>}</button>
             </div>
           </section>
         </div>
