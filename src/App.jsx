@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getIdToken, signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { auth, db, storage } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
@@ -221,6 +222,7 @@ function App({ profile, isAdmin = false }) {
   const [recording, setRecording] = useState(false)
   const [recordingElapsed, setRecordingElapsed] = useState(0)
   const [recordingPreview, setRecordingPreview] = useState(null)
+  const [sendingVoice, setSendingVoice] = useState(false)
   const [waveformLevels, setWaveformLevels] = useState(() => Array(24).fill(3))
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
@@ -492,10 +494,18 @@ function App({ profile, isAdmin = false }) {
           orderBy('createdAt', 'asc'),
           limit(300),
         )
-        unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-          const messages = snapshot.docs.map((messageDoc) => {
+        unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+          const messages = await Promise.all(snapshot.docs.map(async (messageDoc) => {
             const data = messageDoc.data()
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+            let mediaUrl = ''
+            if (data.type === 'audio' && data.attachmentPath && storage) {
+              try {
+                mediaUrl = await getDownloadURL(storageRef(storage, data.attachmentPath))
+              } catch (error) {
+                console.error('Could not load voice message media:', error)
+              }
+            }
             return {
               id: messageDoc.id,
               from: data.senderId === uid ? 'me' : 'them',
@@ -503,6 +513,9 @@ function App({ profile, isAdmin = false }) {
               type: data.type || 'text',
               text: data.text || '',
               attachmentPath: data.attachmentPath || '',
+              mediaUrl,
+              durationSeconds: data.durationSeconds || 0,
+              mimeType: data.mimeType || '',
               viewOnce: data.viewOnce === true,
               viewed: data.senderId !== uid && Boolean(data.viewedByUid),
               replyToId: data.replyToId,
@@ -511,11 +524,12 @@ function App({ profile, isAdmin = false }) {
               time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
               status: data.senderId === uid ? 'sent' : 'received',
             }
-          })
+          }))
+          if (cancelled) return
           setConversations((items) => {
             const latest = messages[messages.length - 1]
             const preview = latest
-              ? (latest.type === 'image' ? 'Photo' : latest.text || 'Message')
+              ? (latest.type === 'image' ? 'Photo' : latest.type === 'audio' ? 'Voice message' : latest.text || 'Message')
               : 'Start a conversation'
             const existing = items.find((item) => item.id === friend.id)
             const nextConversation = {
@@ -1046,21 +1060,70 @@ function App({ profile, isAdmin = false }) {
     setRecordingPreview(null)
   }
 
-  const sendVoicePreview = () => {
-    if (!recordingPreview) return
-    const message = {
-      id: 'voice-' + Date.now(),
-      from: 'me',
-      type: 'audio',
-      mediaUrl: recordingPreview.url,
-      durationSeconds: recordingPreview.durationSeconds,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: 'sent',
+  const sendVoicePreview = async () => {
+    if (!recordingPreview || sendingVoice) return
+    const uid = auth?.currentUser?.uid
+    const targetId = activeId
+    const apiConversation = activeConversation
+    if (!uid || !db || !storage || !apiConversation || !friendContacts.some((person) => person.id === targetId)) {
+      showToast('This chat is not ready for voice messages. Sign in again and confirm you are friends.')
+      return
     }
-    setConversations((items) => items.map((item) => item.id === activeId
-      ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now', lastActivityAt: Date.now() }
-      : item))
-    setRecordingPreview(null)
+
+    const rawMimeType = recordingPreview.blob?.type || 'audio/webm'
+    const mimeType = rawMimeType.split(';')[0].toLowerCase()
+    const extensions = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav' }
+    const extension = extensions[mimeType]
+    if (!extension) {
+      showToast('This browser produced an unsupported audio format. Please record again.')
+      return
+    }
+
+    setSendingVoice(true)
+    const conversationId = apiConversation.firebaseConversationId || directConversationId(uid, targetId)
+    const conversationRef = doc(db, 'conversations', conversationId)
+    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+    const filePath = `conversations/${conversationId}/voice/${messageRef.id}/${messageRef.id}.${extension}`
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const conversationSnapshot = await transaction.get(conversationRef)
+        if (!conversationSnapshot.exists()) {
+          transaction.set(conversationRef, {
+            createdBy: uid,
+            memberIds: [uid, targetId].sort(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (!conversationSnapshot.data().memberIds?.includes(uid) || !conversationSnapshot.data().memberIds?.includes(targetId)) {
+          throw new Error('This conversation does not have the expected members.')
+        }
+      })
+
+      await uploadBytes(storageRef(storage, filePath), recordingPreview.blob, {
+        contentType: mimeType,
+        customMetadata: { conversationId, messageId: messageRef.id, senderId: uid },
+      })
+      await setDoc(messageRef, {
+        senderId: uid,
+        type: 'audio',
+        attachmentPath: filePath,
+        durationSeconds: recordingPreview.durationSeconds,
+        mimeType,
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Voice message' } : {}),
+      })
+
+      if (recordingPreview.url) URL.revokeObjectURL(recordingPreview.url)
+      setRecordingPreview(null)
+      setReplyTarget(null)
+      showToast('Voice message sent.')
+    } catch (error) {
+      console.error('Voice message send failed:', error)
+      showToast(error?.message || 'Could not send the voice message. Please try again.')
+    } finally {
+      setSendingVoice(false)
+    }
   }
 
   const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
@@ -1649,7 +1712,7 @@ function App({ profile, isAdmin = false }) {
                   <div className="composer-voice-preview" aria-label="Voice message preview">
                     <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
                     <button type="button" className="voice-discard-button" onClick={discardVoicePreview} aria-label="Discard voice recording" title="Discard recording"><Icon name="trash" size={16} /></button>
-                    <button type="button" className="send-button voice-preview-send" onClick={sendVoicePreview} aria-label="Send voice message" title="Send voice message"><Icon name="send" size={17} /></button>
+                    <button type="button" className="send-button voice-preview-send" onClick={sendVoicePreview} disabled={sendingVoice} aria-label={sendingVoice ? 'Sending voice message' : 'Send voice message'} title={sendingVoice ? 'Sending…' : 'Send voice message'}>{sendingVoice ? '…' : <Icon name="send" size={17} />}</button>
                   </div>
                 ) : recording ? (
                   <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
