@@ -265,7 +265,6 @@ function App({ profile, isAdmin = false }) {
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [avatarPickerGender, setAvatarPickerGender] = useState(() => profile?.gender || ((localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male'))
   const messageInputRef = useRef(null)
-  const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -835,102 +834,6 @@ function App({ profile, isAdmin = false }) {
         : item))
     }
     setViewOnceImage(null)
-  }
-
-  const handleFile = async (event) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file || !activeConversation) return
-    input.value = ''
-
-    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
-      showToast('Choose a JPG, PNG, WEBP or GIF image.')
-      return
-    }
-    if (file.size < 1 || file.size > 3 * 1024 * 1024) {
-      showToast('Choose an image up to 3 MB.')
-      return
-    }
-
-    const uid = auth?.currentUser?.uid
-    const apiUrl = getMediaApiUrl()
-    if (!uid) {
-      showToast('Sign in again before sharing an image.')
-      return
-    }
-    if (!db) {
-      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
-      return
-    }
-    if (!friendContacts.some((person) => person.id === activeId)) {
-      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
-      return
-    }
-    if (!apiUrl) {
-      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
-      return
-    }
-
-    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
-    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
-
-    try {
-      // Repair older conversations before requesting the Worker upload.
-      await runTransaction(db, async (transaction) => {
-        const conversationRef = doc(db, 'conversations', conversationId)
-        const snapshot = await transaction.get(conversationRef)
-        if (!snapshot.exists()) {
-          transaction.set(conversationRef, {
-            createdBy: uid,
-            memberIds: [uid, activeId].sort(),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
-          throw new Error('This conversation does not have the expected members.')
-        }
-      })
-
-      const idToken = await getIdToken(auth.currentUser)
-      const uploadForm = new FormData()
-      uploadForm.append('conversationId', conversationId)
-      uploadForm.append('messageId', messageRef.id)
-      uploadForm.append('file', file, file.name)
-
-      const uploadResponse = await fetch(apiUrl + '/media/upload', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + idToken },
-        body: uploadForm,
-      })
-      const uploadResult = await uploadResponse.json().catch(() => ({}))
-      if (!uploadResponse.ok || !uploadResult.filePath) {
-        throw new Error(uploadResult.error || 'The image upload service rejected this file.')
-      }
-
-      await setDoc(messageRef, {
-        senderId: uid,
-        type: 'image',
-        attachmentPath: uploadResult.filePath,
-        viewOnce: true,
-        createdAt: serverTimestamp(),
-        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-      })
-
-      setConversations((items) => items.map((item) => item.id === activeId
-        ? {
-          ...item,
-          firebaseConversationId: conversationId,
-          preview: 'Photo',
-          time: 'Now',
-          lastActivityAt: Date.now(),
-        }
-        : item))
-      setReplyTarget(null)
-      // The inbox listener reads the newest message directly, including photos.
-      showToast('Photo sent.')
-    } catch (error) {
-      showToast(error?.message || 'Could not send the image. Please try again.')
-    }
   }
 
   const stopVoiceWaveform = () => {
@@ -1704,10 +1607,18 @@ function App({ profile, isAdmin = false }) {
             <form className="composer-wrap" onSubmit={handleSend}>
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
-              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
+              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span></div>
               <div className="composer">
-                <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
-                {!recordingPreview && <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>}
+                {!recordingPreview && <span className="emoji-picker-control">
+                  <span className="emoji-picker-tooltip">Choose an emoji</span>
+                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
+                  {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
+                    <div className="composer-emoji-picker-heading"><strong>Choose an emoji</strong><button type="button" onClick={() => setEmojiPickerOpen(false)} aria-label="Close emoji picker"><Icon name="close" size={14} /></button></div>
+                    <div className="composer-emoji-grid">
+                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
+                    </div>
+                  </div>}
+                </span>}
                 {recordingPreview ? (
                   <div className="composer-voice-preview" aria-label="Voice message preview">
                     <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
