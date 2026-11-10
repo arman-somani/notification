@@ -179,7 +179,19 @@ service cloud.firestore {
             request.resource.data.type != 'audio'
             || (
               request.resource.data.attachmentPath is string
-              && request.resource.data.attachmentPath.matches('^conversations/[^/]+/voice/[^/]+/[^/]+
+              && request.resource.data.attachmentPath.matches('^conversations/[^/]+/voice/[^/]+/[^/]+$')
+              && request.resource.data.durationSeconds is int
+              && request.resource.data.durationSeconds > 0
+              && request.resource.data.durationSeconds <= 300
+              && request.resource.data.mimeType is string
+              && request.resource.data.mimeType.matches('audio/(webm|ogg|mpeg|mp4|wav)')
+            )
+          )
+          && request.resource.data.keys().hasOnly([
+            'senderId', 'type', 'text', 'createdAt', 'editedAt',
+            'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
+            'durationSeconds', 'mimeType', 'forwardedFrom', 'mentionIds'
+          ]);
         allow update: if isConversationMember(conversationId)
           && (
             (
