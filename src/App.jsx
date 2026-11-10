@@ -139,7 +139,7 @@ function ConversationIdentity({ person, subtitle, subtitleClass = '', size = 'he
   )
 }
 
-function ConversationListItem({ conversation, active, onSelect, onDelete, deleting = false }) {
+function ConversationListItem({ conversation, active, onSelect }) {
   return (
     <div className={'conversation-item-wrap' + (active ? ' active' : '')}>
       <button type="button" className={'conversation-item' + (active ? ' active' : '')} onClick={onSelect}>
@@ -148,9 +148,6 @@ function ConversationListItem({ conversation, active, onSelect, onDelete, deleti
           <span className="conversation-topline"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
           <span className="conversation-bottomline"><span className="conversation-preview">{conversation.preview}</span>{conversation.unread > 0 && <i className="unread-count">{conversation.unread}</i>}</span>
         </span>
-      </button>
-      <button type="button" className="conversation-delete-button" onClick={(event) => { event.stopPropagation(); onDelete() }} disabled={deleting} aria-label={`Delete chat with ${conversation.name}`} title="Delete chat">
-        <Icon name="trash" size={15} />
       </button>
     </div>
   )
@@ -1458,7 +1455,7 @@ function App({ profile, isAdmin = false }) {
                 <button onClick={() => { setSearch(''); setListFilter('all'); setShowNewChat(true) }}>Start a conversation</button>
               </div>
             ) : visibleConversations.map((conversation) => (
-              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} deleting={deletingConversationId === (conversation.firebaseConversationId || directConversationId(auth?.currentUser?.uid || '', conversation.id))} onDelete={() => deleteConversation(conversation)} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
+              <ConversationListItem key={conversation.id} conversation={conversation} active={activeId === conversation.id} onSelect={() => friendContacts.some((person) => person.id === conversation.id) ? startConversation(conversation) : selectConversation(conversation.id)} />
             ))}
           </div>
         </div>
@@ -1567,6 +1564,7 @@ function App({ profile, isAdmin = false }) {
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, unread: 1 } : item)); setShowChatMenu(false); showToast('Marked as unread') }}><Icon name="message" size={16} />Mark as unread</button>
                       <button onClick={() => { setConversations((items) => items.map((item) => item.id === activeId ? { ...item, muted: !item.muted } : item)); setShowChatMenu(false); showToast(activeConversation.muted ? 'Conversation unmuted' : 'Conversation muted') }}><Icon name="bell" size={16} />{activeConversation.muted ? 'Unmute conversation' : 'Mute conversation'}</button>
                       <button onClick={archiveConversation}><Icon name="archive" size={16} />{activeConversation.archived ? 'Restore conversation' : 'Archive conversation'}</button>
+                      <button className="danger-menu-item" onClick={() => { setShowChatMenu(false); deleteConversation(activeConversation) }}><Icon name="trash" size={16} />Delete chat</button>
                       {activeConversation.status === 'group' && <button className="danger-menu-item" onClick={leaveGroup}><Icon name="logout" size={16} />Leave group</button>}
                     </div>
                   )}
