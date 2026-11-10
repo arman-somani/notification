@@ -1584,7 +1584,7 @@ function App({ profile, isAdmin = false }) {
                           </button>
                         )
                       ) : message.type === 'audio' ? (
-                        message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
+                        message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message unavailable. Check Firebase Storage access and storage.rules.</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
