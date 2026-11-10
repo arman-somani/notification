@@ -175,10 +175,86 @@ service cloud.firestore {
               && request.resource.data.attachmentPath.size() <= 1024
             )
           )
+          && (
+            request.resource.data.type != 'audio'
+            || (
+              request.resource.data.attachmentPath is string
+              && request.resource.data.attachmentPath.matches('^conversations/[^/]+/voice/[^/]+/[^/]+
+        allow update: if isConversationMember(conversationId)
+          && (
+            (
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['text', 'editedAt', 'deletedAt'])
+            )
+            || (
+              resource.data.type == 'image'
+              && resource.data.viewOnce == true
+              && resource.data.senderId != request.auth.uid
+              && !('viewedByUid' in resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['viewedByUid', 'viewedAt'])
+              && request.resource.data.viewedByUid == request.auth.uid
+              && request.resource.data.viewedAt is timestamp
+            )
+          );
+        allow delete: if false;
+      }
+
+      match /polls/{pollId} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update: if isConversationMember(conversationId);
+        allow delete: if false;
+
+        match /votes/{uid} {
+          allow read: if isConversationMember(conversationId);
+          allow create, update: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+          allow delete: if isConversationMember(conversationId)
+            && request.auth.uid == uid;
+        }
+      }
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /adminAuditLogs/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+})
+              && request.resource.data.durationSeconds is int
+              && request.resource.data.durationSeconds > 0
+              && request.resource.data.durationSeconds <= 300
+              && request.resource.data.mimeType is string
+              && request.resource.data.mimeType.matches('audio/(webm|ogg|mpeg|mp4|wav)')
+            )
+          )
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
-            'forwardedFrom', 'mentionIds'
+            'durationSeconds', 'mimeType', 'forwardedFrom', 'mentionIds'
           ]);
         allow update: if isConversationMember(conversationId)
           && (
