@@ -1626,7 +1626,7 @@ function App({ profile, isAdmin = false }) {
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span></div>
               <div className="composer">
-                {!recordingPreview && <span className="emoji-picker-control">
+                <span className="emoji-picker-control">
                   <span className="emoji-picker-tooltip">Choose an emoji</span>
                   <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
                   {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
@@ -1635,46 +1635,13 @@ function App({ profile, isAdmin = false }) {
                       {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
                     </div>
                   </div>}
-                </span>}
-                {recordingPreview ? (
-                  <div className="composer-voice-preview" aria-label="Voice message preview">
-                    <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
-                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview} aria-label="Discard voice recording" title="Discard recording"><Icon name="trash" size={16} /></button>
-                    <button type="button" className="send-button voice-preview-send" onClick={sendVoicePreview} disabled={sendingVoice} aria-label={sendingVoice ? 'Sending voice message' : 'Send voice message'} title={sendingVoice ? 'Sending…' : 'Send voice message'}>{sendingVoice ? '…' : <Icon name="send" size={17} />}</button>
-                  </div>
-                ) : recording ? (
-                  <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
-                    <span className="composer-recording-badge"><i /> REC</span>
-                    <span className="voice-waveform" aria-hidden="true">
-                      {waveformLevels.map((level, index) => <i key={index} style={{ height: level + 'px' }} />)}
-                    </span>
-                    <strong>{Math.floor(recordingElapsed / 60)}:{String(recordingElapsed % 60).padStart(2, '0')}</strong>
-                    <small>Release to finish</small>
-                  </div>
-                ) : (
-                  <>
-                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
-                    <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
-                  </>
-                )}
-
-                {!recordingPreview && <span className="voice-record-control">
-                  <span className="voice-record-tooltip">{recording ? 'Tap to finish recording' : 'Tap to record a voice message'}</span>
-                  <button
-                    type="button"
-                    className={'composer-action voice-record-button' + (recording ? ' recording' : '')}
-                    disabled={Boolean(recordingPreview)}
-                    onClick={() => {
-                      if (recording || recordingHoldRef.current) stopVoiceRecording()
-                      else startVoiceRecording()
-                    }}
-                    aria-label={recording ? 'Stop voice recording' : 'Start voice recording'}
-                    aria-pressed={recording}
-                  ><Icon name={recording ? 'square' : 'mic'} size={19} /></button>
-                </span>}
-                {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
+                </span>
+                <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
+                <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
+                {/* Voice message recording and sending controls removed. */}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Synced conversations only</span></div>
+              <div className="composer-footnote"><span>Messages are sent when you press send</span><span><Icon name="shield" size={12} /> Synced conversations only</span></div>
             </form>
           </section>
         ) : (
