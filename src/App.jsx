@@ -7,6 +7,13 @@ import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
 import { isDesignatedAdminEmail } from './adminConfig'
 
+const getConversationActivity = (conversation) => {
+  if (Number.isFinite(conversation.lastActivityAt)) return conversation.lastActivityAt
+  const lastMessageId = conversation.messages?.[conversation.messages.length - 1]?.id || ''
+  const timestampMatch = String(lastMessageId).match(/(?:m|img|voice|fwd|poll)-(\\d+)/)
+  return timestampMatch ? Number(timestampMatch[1]) : 0
+}
+
 
 
 const avatarOptions = [
