@@ -262,6 +262,7 @@ function App({ profile, isAdmin = false }) {
   const [profileName, setProfileName] = useState(() => profile?.displayName || localStorage.getItem('notification-display-name') || 'Your workspace')
   const [profileAvatar, setProfileAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [avatarSaving, setAvatarSaving] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [avatarPickerGender, setAvatarPickerGender] = useState(() => profile?.gender || ((localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male'))
   const messageInputRef = useRef(null)
@@ -638,20 +639,41 @@ function App({ profile, isAdmin = false }) {
   const openAvatarPicker = () => {
     setProfileMenuOpen(false)
     setDraftAvatar(profileAvatar)
-    setAvatarPickerGender(profile?.gender || (profileAvatar.startsWith('female') ? 'female' : 'male'))
+    setAvatarPickerGender(profileAvatar.startsWith('female') ? 'female' : 'male')
     setShowAvatarPicker(true)
   }
 
   const saveAvatarSelection = async () => {
     const uid = auth?.currentUser?.uid
-    if (!uid || !db) { showToast('Could not save your avatar. Please sign in again.'); return }
+    const selectedAvatar = avatarOptions.find((avatar) => avatar.id === draftAvatar)
+    if (!uid || !db) {
+      showToast('Your session expired. Sign in again before changing your avatar.')
+      return
+    }
+    if (!selectedAvatar || selectedAvatar.gender !== avatarPickerGender) {
+      showToast('Please select a valid avatar for the chosen category.')
+      return
+    }
+    if (avatarSaving) return
+    setAvatarSaving(true)
     try {
-      await setDoc(doc(db, 'users', uid), { avatarId: draftAvatar, gender: avatarPickerGender, updatedAt: serverTimestamp() }, { merge: true })
+      await setDoc(doc(db, 'users', uid), {
+        avatarId: draftAvatar,
+        gender: avatarPickerGender,
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
       setProfileAvatar(draftAvatar)
       localStorage.setItem('notification-profile-avatar', draftAvatar)
       setShowAvatarPicker(false)
-      showToast('Your avatar has been updated')
-    } catch (error) { showToast(error?.message || 'Could not save your avatar.') }
+      showToast('Your avatar has been updated.')
+    } catch (error) {
+      console.error('Avatar update failed:', error)
+      showToast(error?.code === 'permission-denied'
+        ? 'Firebase blocked the avatar update. Publish the latest Firestore rules and try again.'
+        : error?.message || 'Could not save your avatar. Please try again.')
+    } finally {
+      setAvatarSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -1446,7 +1468,7 @@ function App({ profile, isAdmin = false }) {
                 <div className="settings-section-title"><strong>Profile appearance</strong><span>Choose how people see you across Converly</span></div>
                 <div className="setting-row profile-avatar-setting">
                   <Avatar person={{ avatarId: profileAvatar }} size="lg" />
-                  <span className="setting-copy"><strong>Profile avatar</strong><small>{profile?.gender === 'female' ? 'Female' : profile?.gender === 'male' ? 'Male' : (profileAvatar.startsWith('female') ? 'Female' : 'Male')} avatar · 20 options available</small></span>
+                  <span className="setting-copy"><strong>Profile avatar</strong><small>{profileAvatar.startsWith('female') ? 'Female' : 'Male'} avatar · 20 options available</small></span>
                   <button className="settings-logout-button" type="button" onClick={openAvatarPicker}>Change avatar</button>
                 </div>
                 <div className="settings-section-title"><strong>Account</strong><span>Manage your Converly session</span></div>
@@ -1725,7 +1747,7 @@ function App({ profile, isAdmin = false }) {
             <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from 20 preset avatars. You can change your selection anytime.</div>
             <div className="avatar-picker-actions">
               <button className="secondary-button" onClick={() => setShowAvatarPicker(false)}>Cancel</button>
-              <button className="primary-button" onClick={saveAvatarSelection}><Icon name="check" size={15} /> Use this avatar</button>
+              <button className="primary-button" onClick={saveAvatarSelection} disabled={avatarSaving}>{avatarSaving ? 'Saving…' : <><Icon name="check" size={15} /> Use this avatar</>}</button>
             </div>
           </section>
         </div>
