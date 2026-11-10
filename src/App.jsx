@@ -1009,7 +1009,7 @@ function App({ profile, isAdmin = false }) {
         if (!recordingCancelledRef.current && chunks.length) {
           const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
           const url = URL.createObjectURL(blob)
-          setRecordingPreview({ url, durationSeconds })
+          setRecordingPreview({ url, blob, durationSeconds })
         } else if (!recordingCancelledRef.current) {
           showToast('No audio was captured. Please try recording again.')
         }
