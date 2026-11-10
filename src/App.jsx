@@ -956,18 +956,6 @@ function App({ profile, isAdmin = false }) {
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
   }
 
-  const cancelVoiceRecording = () => {
-    recordingCancelledRef.current = true
-    recordingHoldRef.current = false
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
-    } else {
-      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
-      recordingStreamRef.current = null
-      setRecording(false)
-    }
-  }
-
   const discardVoicePreview = () => {
     if (recordingPreview?.url) URL.revokeObjectURL(recordingPreview.url)
     setRecordingPreview(null)
@@ -1671,34 +1659,18 @@ function App({ profile, isAdmin = false }) {
                 )}
 
                 {!recordingPreview && <span className="voice-record-control">
-                  <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
+                  <span className="voice-record-tooltip">{recording ? 'Tap to finish recording' : 'Tap to record a voice message'}</span>
                   <button
                     type="button"
                     className={'composer-action voice-record-button' + (recording ? ' recording' : '')}
                     disabled={Boolean(recordingPreview)}
-                    onPointerDown={(event) => {
-                      if (event.pointerType === 'mouse' && event.button !== 0) return
-                      event.preventDefault()
-                      event.currentTarget.setPointerCapture?.(event.pointerId)
-                      startVoiceRecording()
+                    onClick={() => {
+                      if (recording || recordingHoldRef.current) stopVoiceRecording()
+                      else startVoiceRecording()
                     }}
-                    onPointerUp={stopVoiceRecording}
-                    onPointerCancel={cancelVoiceRecording}
-                    onKeyDown={(event) => {
-                      if (event.key === ' ' || event.key === 'Enter') {
-                        event.preventDefault()
-                        startVoiceRecording()
-                      }
-                    }}
-                    onKeyUp={(event) => {
-                      if (event.key === ' ' || event.key === 'Enter') {
-                        event.preventDefault()
-                        stopVoiceRecording()
-                      }
-                    }}
-                    onContextMenu={(event) => event.preventDefault()}
-                    aria-label={recording ? 'Recording. Release to finish' : 'Hold to record a voice message'}
-                  ><Icon name="mic" size={19} /></button>
+                    aria-label={recording ? 'Stop voice recording' : 'Start voice recording'}
+                    aria-pressed={recording}
+                  ><Icon name={recording ? 'square' : 'mic'} size={19} /></button>
                 </span>}
                 {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
               </div>
