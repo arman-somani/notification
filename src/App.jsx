@@ -29,6 +29,34 @@ avatarOptions.push(
   ...avatarOptions.filter((avatar) => avatar.gender === 'female').slice(0, 5).map((avatar, index) => ({ ...avatar, id: 'female-' + String(index + 6).padStart(2, '0'), label: ['Braided', 'Layered', 'Wavy bob', 'Long fringe', 'Elegant'][index], hair: ['#44352e', '#252b35', '#59483f', '#39313d', '#4c423b'][index], shirt: ['#75636a', '#65716c', '#77705d', '#6b6278', '#6b6b79'][index] })),
 )
 
+// Normalize Firestore timestamps, Dates, numeric timestamps, and ISO strings
+// before sorting conversations. Missing or malformed dates safely sort as oldest.
+function getConversationActivity(conversation) {
+  const toMillis = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 0 && value < 1e12 ? value * 1000 : value
+    }
+    if (value instanceof Date) return value.getTime()
+    if (value && typeof value.toMillis === 'function') {
+      const result = value.toMillis()
+      return Number.isFinite(result) ? result : 0
+    }
+    if (value && typeof value.seconds === 'number') return value.seconds * 1000
+    if (typeof value === 'string') {
+      const result = Date.parse(value)
+      return Number.isFinite(result) ? result : 0
+    }
+    return 0
+  }
+
+  return Math.max(
+    toMillis(conversation?.lastActivityAt),
+    toMillis(conversation?.lastMessageAt),
+    toMillis(conversation?.updatedAt),
+    toMillis(conversation?.createdAt),
+  )
+}
+
 function AvatarArtwork({ avatarId }) {
   const avatar = avatarOptions.find((option) => option.id === avatarId)
   if (!avatar) return null
