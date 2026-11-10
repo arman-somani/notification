@@ -48,8 +48,10 @@ service cloud.firestore {
       allow update: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['displayName', 'avatarId', 'bio', 'privacy', 'updatedAt'])
+          .hasOnly(['displayName', 'avatarId', 'gender', 'bio', 'privacy', 'updatedAt'])
         && request.resource.data.username == resource.data.username
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['gender'])
+          || request.resource.data.gender in ['male', 'female'])
         && !request.resource.data.keys().hasAny(['admin', 'verified', 'suspended']);
       allow delete: if false;
 
@@ -175,10 +177,22 @@ service cloud.firestore {
               && request.resource.data.attachmentPath.size() <= 1024
             )
           )
+          && (
+            request.resource.data.type != 'audio'
+            || (
+              request.resource.data.attachmentPath is string
+              && request.resource.data.attachmentPath.matches('^conversations/[^/]+/voice/[^/]+/[^/]+$')
+              && request.resource.data.durationSeconds is int
+              && request.resource.data.durationSeconds > 0
+              && request.resource.data.durationSeconds <= 300
+              && request.resource.data.mimeType is string
+              && request.resource.data.mimeType.matches('audio/(webm|ogg|mpeg|mp4|wav)')
+            )
+          )
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
-            'forwardedFrom', 'mentionIds'
+            'durationSeconds', 'mimeType', 'forwardedFrom', 'mentionIds'
           ]);
         allow update: if isConversationMember(conversationId)
           && (

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getIdToken, signOut } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { auth, db, storage } from './firebase/client'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
@@ -34,6 +35,34 @@ avatarOptions.push(
   ...avatarOptions.filter((avatar) => avatar.gender === 'male').slice(0, 5).map((avatar, index) => ({ ...avatar, id: 'male-' + String(index + 6).padStart(2, '0'), label: ['Textured', 'Modern', 'Tousled', 'Sleek', 'Casual'][index], hair: ['#252525', '#55504b', '#343b43', '#292d35', '#51483f'][index], shirt: ['#5c6b78', '#6b625b', '#526b62', '#6c5b70', '#77705f'][index] })),
   ...avatarOptions.filter((avatar) => avatar.gender === 'female').slice(0, 5).map((avatar, index) => ({ ...avatar, id: 'female-' + String(index + 6).padStart(2, '0'), label: ['Braided', 'Layered', 'Wavy bob', 'Long fringe', 'Elegant'][index], hair: ['#44352e', '#252b35', '#59483f', '#39313d', '#4c423b'][index], shirt: ['#75636a', '#65716c', '#77705d', '#6b6278', '#6b6b79'][index] })),
 )
+
+// Normalize Firestore timestamps, Dates, numeric timestamps, and ISO strings
+// before sorting conversations. Missing or malformed dates safely sort as oldest.
+function getConversationActivity(conversation) {
+  const toMillis = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 0 && value < 1e12 ? value * 1000 : value
+    }
+    if (value instanceof Date) return value.getTime()
+    if (value && typeof value.toMillis === 'function') {
+      const result = value.toMillis()
+      return Number.isFinite(result) ? result : 0
+    }
+    if (value && typeof value.seconds === 'number') return value.seconds * 1000
+    if (typeof value === 'string') {
+      const result = Date.parse(value)
+      return Number.isFinite(result) ? result : 0
+    }
+    return 0
+  }
+
+  return Math.max(
+    toMillis(conversation?.lastActivityAt),
+    toMillis(conversation?.lastMessageAt),
+    toMillis(conversation?.updatedAt),
+    toMillis(conversation?.createdAt),
+  )
+}
 
 function AvatarArtwork({ avatarId }) {
   const avatar = avatarOptions.find((option) => option.id === avatarId)
@@ -228,6 +257,7 @@ function App({ profile, isAdmin = false }) {
   const [recording, setRecording] = useState(false)
   const [recordingElapsed, setRecordingElapsed] = useState(0)
   const [recordingPreview, setRecordingPreview] = useState(null)
+  const [sendingVoice, setSendingVoice] = useState(false)
   const [waveformLevels, setWaveformLevels] = useState(() => Array(24).fill(3))
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatSearch, setNewChatSearch] = useState('')
@@ -267,10 +297,10 @@ function App({ profile, isAdmin = false }) {
   const [profileName, setProfileName] = useState(() => profile?.displayName || localStorage.getItem('notification-display-name') || 'Your workspace')
   const [profileAvatar, setProfileAvatar] = useState(() => profile?.avatarId || localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [avatarSaving, setAvatarSaving] = useState(false)
   const [draftAvatar, setDraftAvatar] = useState(() => localStorage.getItem('notification-profile-avatar') || 'male-01')
   const [avatarPickerGender, setAvatarPickerGender] = useState(() => profile?.gender || ((localStorage.getItem('notification-profile-avatar') || 'male-01').startsWith('female') ? 'female' : 'male'))
   const messageInputRef = useRef(null)
-  const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -458,7 +488,12 @@ function App({ profile, isAdmin = false }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const activeConversation = conversations.find((conversation) => conversation.id === activeId) || conversations[0]
+  const activeConversationMatch = conversations.find((conversation) => conversation.id === activeId) || conversations[0] || null
+  // Friend contacts can arrive from the acceptance flow before the inbox listener.
+  // Normalize the shape so the chat view never dereferences a missing messages array.
+  const activeConversation = activeConversationMatch
+    ? { ...activeConversationMatch, messages: Array.isArray(activeConversationMatch.messages) ? activeConversationMatch.messages : [] }
+    : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
@@ -499,10 +534,18 @@ function App({ profile, isAdmin = false }) {
           orderBy('createdAt', 'asc'),
           limit(300),
         )
-        unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-          const messages = snapshot.docs.map((messageDoc) => {
+        unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+          const messages = await Promise.all(snapshot.docs.map(async (messageDoc) => {
             const data = messageDoc.data()
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
+            let mediaUrl = ''
+            if (data.type === 'audio' && data.attachmentPath && storage) {
+              try {
+                mediaUrl = await getDownloadURL(storageRef(storage, data.attachmentPath))
+              } catch (error) {
+                console.error('Could not load voice message media:', error)
+              }
+            }
             return {
               id: messageDoc.id,
               from: data.senderId === uid ? 'me' : 'them',
@@ -510,6 +553,9 @@ function App({ profile, isAdmin = false }) {
               type: data.type || 'text',
               text: data.text || '',
               attachmentPath: data.attachmentPath || '',
+              mediaUrl,
+              durationSeconds: data.durationSeconds || 0,
+              mimeType: data.mimeType || '',
               viewOnce: data.viewOnce === true,
               viewed: data.senderId !== uid && Boolean(data.viewedByUid),
               replyToId: data.replyToId,
@@ -518,11 +564,12 @@ function App({ profile, isAdmin = false }) {
               time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
               status: data.senderId === uid ? 'sent' : 'received',
             }
-          })
+          }))
+          if (cancelled) return
           setConversations((items) => {
             const latest = messages[messages.length - 1]
             const preview = latest
-              ? (latest.type === 'image' ? 'Photo' : latest.text || 'Message')
+              ? (latest.type === 'image' ? 'Photo' : latest.type === 'audio' ? 'Voice message' : latest.text || 'Message')
               : 'Start a conversation'
             const existing = items.find((item) => item.id === friend.id)
             const nextConversation = {
@@ -632,20 +679,41 @@ function App({ profile, isAdmin = false }) {
   const openAvatarPicker = () => {
     setProfileMenuOpen(false)
     setDraftAvatar(profileAvatar)
-    setAvatarPickerGender(profile?.gender || (profileAvatar.startsWith('female') ? 'female' : 'male'))
+    setAvatarPickerGender(profileAvatar.startsWith('female') ? 'female' : 'male')
     setShowAvatarPicker(true)
   }
 
   const saveAvatarSelection = async () => {
     const uid = auth?.currentUser?.uid
-    if (!uid || !db) { showToast('Could not save your avatar. Please sign in again.'); return }
+    const selectedAvatar = avatarOptions.find((avatar) => avatar.id === draftAvatar)
+    if (!uid || !db) {
+      showToast('Your session expired. Sign in again before changing your avatar.')
+      return
+    }
+    if (!selectedAvatar || selectedAvatar.gender !== avatarPickerGender) {
+      showToast('Please select a valid avatar for the chosen category.')
+      return
+    }
+    if (avatarSaving) return
+    setAvatarSaving(true)
     try {
-      await setDoc(doc(db, 'users', uid), { avatarId: draftAvatar, gender: avatarPickerGender, updatedAt: serverTimestamp() }, { merge: true })
+      await setDoc(doc(db, 'users', uid), {
+        avatarId: draftAvatar,
+        gender: avatarPickerGender,
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
       setProfileAvatar(draftAvatar)
       localStorage.setItem('notification-profile-avatar', draftAvatar)
       setShowAvatarPicker(false)
-      showToast('Your avatar has been updated')
-    } catch (error) { showToast(error?.message || 'Could not save your avatar.') }
+      showToast('Your avatar has been updated.')
+    } catch (error) {
+      console.error('Avatar update failed:', error)
+      showToast(error?.code === 'permission-denied'
+        ? 'Firebase blocked the avatar update. Publish the latest Firestore rules and try again.'
+        : error?.message || 'Could not save your avatar. Please try again.')
+    } finally {
+      setAvatarSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -830,102 +898,6 @@ function App({ profile, isAdmin = false }) {
     setViewOnceImage(null)
   }
 
-  const handleFile = async (event) => {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file || !activeConversation) return
-    input.value = ''
-
-    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
-      showToast('Choose a JPG, PNG, WEBP or GIF image.')
-      return
-    }
-    if (file.size < 1 || file.size > 3 * 1024 * 1024) {
-      showToast('Choose an image up to 3 MB.')
-      return
-    }
-
-    const uid = auth?.currentUser?.uid
-    const apiUrl = getMediaApiUrl()
-    if (!uid) {
-      showToast('Sign in again before sharing an image.')
-      return
-    }
-    if (!db) {
-      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
-      return
-    }
-    if (!friendContacts.some((person) => person.id === activeId)) {
-      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
-      return
-    }
-    if (!apiUrl) {
-      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
-      return
-    }
-
-    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
-    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
-
-    try {
-      // Repair older conversations before requesting the Worker upload.
-      await runTransaction(db, async (transaction) => {
-        const conversationRef = doc(db, 'conversations', conversationId)
-        const snapshot = await transaction.get(conversationRef)
-        if (!snapshot.exists()) {
-          transaction.set(conversationRef, {
-            createdBy: uid,
-            memberIds: [uid, activeId].sort(),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
-          throw new Error('This conversation does not have the expected members.')
-        }
-      })
-
-      const idToken = await getIdToken(auth.currentUser)
-      const uploadForm = new FormData()
-      uploadForm.append('conversationId', conversationId)
-      uploadForm.append('messageId', messageRef.id)
-      uploadForm.append('file', file, file.name)
-
-      const uploadResponse = await fetch(apiUrl + '/media/upload', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + idToken },
-        body: uploadForm,
-      })
-      const uploadResult = await uploadResponse.json().catch(() => ({}))
-      if (!uploadResponse.ok || !uploadResult.filePath) {
-        throw new Error(uploadResult.error || 'The image upload service rejected this file.')
-      }
-
-      await setDoc(messageRef, {
-        senderId: uid,
-        type: 'image',
-        attachmentPath: uploadResult.filePath,
-        viewOnce: true,
-        createdAt: serverTimestamp(),
-        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-      })
-
-      setConversations((items) => items.map((item) => item.id === activeId
-        ? {
-          ...item,
-          firebaseConversationId: conversationId,
-          preview: 'Photo',
-          time: 'Now',
-          lastActivityAt: Date.now(),
-        }
-        : item))
-      setReplyTarget(null)
-      // The inbox listener reads the newest message directly, including photos.
-      showToast('Photo sent.')
-    } catch (error) {
-      showToast(error?.message || 'Could not send the image. Please try again.')
-    }
-  }
-
   const stopVoiceWaveform = () => {
     if (waveformFrameRef.current !== null) window.cancelAnimationFrame(waveformFrameRef.current)
     waveformFrameRef.current = null
@@ -988,7 +960,17 @@ function App({ profile, isAdmin = false }) {
         return
       }
 
-      const recorder = new MediaRecorder(stream)
+      // Prefer formats accepted by our Firebase Storage rules. This avoids
+      // browsers silently choosing an unsupported recording container.
+      const supportedAudioTypes = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ]
+      const preferredAudioType = supportedAudioTypes.find((type) =>
+        typeof MediaRecorder.isTypeSupported !== 'function' || MediaRecorder.isTypeSupported(type),
+      )
+      const recorder = new MediaRecorder(stream, preferredAudioType ? { mimeType: preferredAudioType } : undefined)
       recordingStreamRef.current = stream
       recordingChunksRef.current = []
       recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data) }
@@ -1002,7 +984,7 @@ function App({ profile, isAdmin = false }) {
         if (!recordingCancelledRef.current && chunks.length) {
           const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
           const url = URL.createObjectURL(blob)
-          setRecordingPreview({ url, durationSeconds })
+          setRecordingPreview({ url, blob, durationSeconds })
         } else if (!recordingCancelledRef.current) {
           showToast('No audio was captured. Please try recording again.')
         }
@@ -1036,38 +1018,94 @@ function App({ profile, isAdmin = false }) {
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
   }
 
-  const cancelVoiceRecording = () => {
-    recordingCancelledRef.current = true
-    recordingHoldRef.current = false
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
-    } else {
-      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
-      recordingStreamRef.current = null
-      setRecording(false)
-    }
-  }
-
   const discardVoicePreview = () => {
     if (recordingPreview?.url) URL.revokeObjectURL(recordingPreview.url)
     setRecordingPreview(null)
   }
 
-  const sendVoicePreview = () => {
-    if (!recordingPreview) return
-    const message = {
-      id: 'voice-' + Date.now(),
-      from: 'me',
-      type: 'audio',
-      mediaUrl: recordingPreview.url,
-      durationSeconds: recordingPreview.durationSeconds,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: 'sent',
+  const sendVoicePreview = async () => {
+    if (!recordingPreview || sendingVoice) return
+    const uid = auth?.currentUser?.uid
+    const targetId = activeId
+    const apiConversation = activeConversation
+    if (!uid || !db || !storage || !apiConversation || !friendContacts.some((person) => person.id === targetId)) {
+      showToast('This chat is not ready for voice messages. Sign in again and confirm you are friends.')
+      return
     }
-    setConversations((items) => items.map((item) => item.id === activeId
-      ? { ...item, messages: [...item.messages, message], preview: 'Voice message', time: 'Now', lastActivityAt: Date.now() }
-      : item))
-    setRecordingPreview(null)
+
+    const audioBlob = recordingPreview.blob
+    if (!(audioBlob instanceof Blob) || audioBlob.size === 0) {
+      showToast('The recording is empty. Please record your voice message again.')
+      return
+    }
+    if (recordingPreview.durationSeconds > 300) {
+      showToast('Voice messages must be 5 minutes or shorter. Please record a shorter message.')
+      return
+    }
+
+    const rawMimeType = audioBlob.type || 'audio/webm'
+    const mimeType = rawMimeType.split(';')[0].trim().toLowerCase()
+    const extensions = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav' }
+    const extension = extensions[mimeType]
+    if (!extension) {
+      showToast('Your browser created an unsupported audio format. Update your browser or try Chrome, Firefox, or Safari.')
+      return
+    }
+
+    setSendingVoice(true)
+    const conversationId = apiConversation.firebaseConversationId || directConversationId(uid, targetId)
+    const conversationRef = doc(db, 'conversations', conversationId)
+    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+    const filePath = `conversations/${conversationId}/voice/${messageRef.id}/${messageRef.id}.${extension}`
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const conversationSnapshot = await transaction.get(conversationRef)
+        if (!conversationSnapshot.exists()) {
+          transaction.set(conversationRef, {
+            createdBy: uid,
+            memberIds: [uid, targetId].sort(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else if (!conversationSnapshot.data().memberIds?.includes(uid) || !conversationSnapshot.data().memberIds?.includes(targetId)) {
+          throw new Error('This conversation does not have the expected members.')
+        }
+      })
+
+      await uploadBytes(storageRef(storage, filePath), audioBlob, {
+        contentType: mimeType,
+        customMetadata: { conversationId, messageId: messageRef.id, senderId: uid },
+      })
+      await setDoc(messageRef, {
+        senderId: uid,
+        type: 'audio',
+        attachmentPath: filePath,
+        durationSeconds: recordingPreview.durationSeconds,
+        mimeType,
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Voice message' } : {}),
+      })
+
+      if (recordingPreview.url) URL.revokeObjectURL(recordingPreview.url)
+      setRecordingPreview(null)
+      setReplyTarget(null)
+      showToast('Voice message sent.')
+    } catch (error) {
+      console.error('Voice message send failed:', error)
+      const errorCode = error?.code || ''
+      if (errorCode === 'storage/unauthorized' || errorCode === 'storage/unauthenticated') {
+        showToast('Firebase Storage blocked this voice message. Publish the latest storage.rules and confirm the chat members are correct.')
+      } else if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
+        showToast('Firestore blocked this voice message. Publish the latest firestore.rules and confirm the friendship is accepted.')
+      } else if (errorCode.startsWith('storage/')) {
+        showToast('Voice upload failed (' + errorCode + '). Check the Firebase Storage bucket and storage.rules.')
+      } else {
+        showToast(error?.message || 'Could not send the voice message. Please try again.')
+      }
+    } finally {
+      setSendingVoice(false)
+    }
   }
 
   const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
@@ -1090,7 +1128,7 @@ function App({ profile, isAdmin = false }) {
   }
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
-    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : isAudioMessage(message) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
+    setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : message.type === 'audio' ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
@@ -1238,8 +1276,34 @@ function App({ profile, isAdmin = false }) {
         const senderProfile = await getDoc(doc(db, 'users', request.senderId))
         if (senderProfile.exists()) {
           const data = senderProfile.data()
-          const name = data.displayName || data.username
-          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
+          const name = data.displayName || data.username || 'Converly user'
+          const acceptedContact = {
+            id: request.senderId,
+            name,
+            username: data.username || '',
+            avatarId: data.avatarId,
+            initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+            status: 'offline',
+            tone: 2,
+            preview: 'Start a conversation',
+            time: '',
+            unread: 0,
+            pinned: false,
+            favorite: false,
+            archived: false,
+            messages: [],
+          }
+          // Update both sources of UI state together. This avoids a brief
+          // selected-contact-without-chat-state race while the contacts effect runs.
+          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), acceptedContact])
+          setConversations((items) => {
+            const existing = items.find((item) => item.id === request.senderId)
+            return existing
+              ? items.map((item) => item.id === request.senderId
+                ? { ...acceptedContact, ...item, messages: Array.isArray(item.messages) ? item.messages : [] }
+                : item)
+              : [...items, acceptedContact]
+          })
         }
         showToast('Friend request accepted')
       } else {
@@ -1470,7 +1534,7 @@ function App({ profile, isAdmin = false }) {
                 <div className="settings-section-title"><strong>Profile appearance</strong><span>Choose how people see you across Converly</span></div>
                 <div className="setting-row profile-avatar-setting">
                   <Avatar person={{ avatarId: profileAvatar }} size="lg" />
-                  <span className="setting-copy"><strong>Profile avatar</strong><small>{profile?.gender === 'female' ? 'Female' : profile?.gender === 'male' ? 'Male' : (profileAvatar.startsWith('female') ? 'Female' : 'Male')} avatar · 20 options available</small></span>
+                  <span className="setting-copy"><strong>Profile avatar</strong><small>{profileAvatar.startsWith('female') ? 'Female' : 'Male'} avatar · 20 options available</small></span>
                   <button className="settings-logout-button" type="button" onClick={openAvatarPicker}>Change avatar</button>
                 </div>
                 <div className="settings-section-title"><strong>Account</strong><span>Manage your Converly session</span></div>
@@ -1595,8 +1659,8 @@ function App({ profile, isAdmin = false }) {
                             <small>{message.attachmentPath ? 'Open once · it cannot be reopened after closing' : 'Image file is unavailable'}</small>
                           </button>
                         )
-                      ) : isAudioMessage(message) ? (
-                        message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message preview expired after refresh</div>
+                      ) : message.type === 'audio' ? (
+                        message.mediaUrl ? <VoiceMessagePlayer className="voice-message-player" src={message.mediaUrl} /> : <div className="media-unavailable">Voice message unavailable. Check Firebase Storage access and storage.rules.</div>
                       ) : message.type === 'file' ? (
                         <div className="file-message">
                           <span className="file-icon"><Icon name="file" size={21} /></span>
@@ -1608,7 +1672,7 @@ function App({ profile, isAdmin = false }) {
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
                       <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
-                      {!isAudioMessage(message) && <>
+                      {message.type !== 'audio' && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
                         <button type="button" onClick={() => beginReply(message)}>Reply</button>
@@ -1626,7 +1690,7 @@ function App({ profile, isAdmin = false }) {
                         {message.from === 'me' && <button type="button" onClick={() => deleteMessage(message.id)}>Delete</button>}
                       </div>}
                       </>}
-                      {!isAudioMessage(message) && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
+                      {message.type !== 'audio' && forwardMessageId === message.id && <div className="forward-inline"><select defaultValue="" onChange={(event) => forwardMessageTo(message, event.target.value)}><option value="" disabled>Forward to…</option>{conversations.filter((item) => item.id !== activeId && !item.archived).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
                     </div>
                   </div>
                 ))}
@@ -1648,32 +1712,9 @@ function App({ profile, isAdmin = false }) {
             <form className="composer-wrap" onSubmit={handleSend}>
               {(replyTarget || editingMessageId) && <div className="composer-context"><span>{editingMessageId ? 'Editing message' : 'Replying to ' + (replyTarget?.sender || activeConversation.name)}</span><strong>{editingMessageId ? 'Update your message' : (replyTarget?.text || 'Message')}</strong><button type="button" onClick={() => { setReplyTarget(null); setEditingMessageId(null); setMessageText('') }} aria-label="Cancel reply or edit"><Icon name="close" size={14} /></button></div>}
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
-              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span><span className="image-policy-note"><Icon name="image" size={12} /> All shared images can be opened once by the recipient</span></div>
+              <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span></div>
               <div className="composer">
-                <input ref={fileInputRef} type="file" accept="image/*" className="visually-hidden" onChange={handleFile} />
-                {!recordingPreview && <button type="button" className="composer-action" onClick={() => fileInputRef.current?.click()} aria-label="Share an image" title="Share an image"><Icon name="image" size={19} /></button>}
-                {recordingPreview ? (
-                  <div className="composer-voice-preview" aria-label="Voice message preview">
-                    <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
-                    <button type="button" className="voice-discard-button" onClick={discardVoicePreview} aria-label="Discard voice recording" title="Discard recording"><Icon name="trash" size={16} /></button>
-                    <button type="button" className="send-button voice-preview-send" onClick={sendVoicePreview} aria-label="Send voice message" title="Send voice message"><Icon name="send" size={17} /></button>
-                  </div>
-                ) : recording ? (
-                  <div className="composer-recording-input" role="status" aria-live="polite" aria-label="Voice recording in progress">
-                    <span className="composer-recording-badge"><i /> REC</span>
-                    <span className="voice-waveform" aria-hidden="true">
-                      {waveformLevels.map((level, index) => <i key={index} style={{ height: level + 'px' }} />)}
-                    </span>
-                    <strong>{Math.floor(recordingElapsed / 60)}:{String(recordingElapsed % 60).padStart(2, '0')}</strong>
-                    <small>Release to finish</small>
-                  </div>
-                ) : (
-                  <>
-                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
-                    <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
-                  </>
-                )}
-                {!recordingPreview && <span className="emoji-picker-control">
+                <span className="emoji-picker-control">
                   <span className="emoji-picker-tooltip">Choose an emoji</span>
                   <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
                   {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
@@ -1682,40 +1723,13 @@ function App({ profile, isAdmin = false }) {
                       {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
                     </div>
                   </div>}
-                </span>}
-                {!recordingPreview && <span className="voice-record-control">
-                  <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
-                  <button
-                    type="button"
-                    className={'composer-action voice-record-button' + (recording ? ' recording' : '')}
-                    disabled={Boolean(recordingPreview)}
-                    onPointerDown={(event) => {
-                      if (event.pointerType === 'mouse' && event.button !== 0) return
-                      event.preventDefault()
-                      event.currentTarget.setPointerCapture?.(event.pointerId)
-                      startVoiceRecording()
-                    }}
-                    onPointerUp={stopVoiceRecording}
-                    onPointerCancel={cancelVoiceRecording}
-                    onKeyDown={(event) => {
-                      if (event.key === ' ' || event.key === 'Enter') {
-                        event.preventDefault()
-                        startVoiceRecording()
-                      }
-                    }}
-                    onKeyUp={(event) => {
-                      if (event.key === ' ' || event.key === 'Enter') {
-                        event.preventDefault()
-                        stopVoiceRecording()
-                      }
-                    }}
-                    onContextMenu={(event) => event.preventDefault()}
-                    aria-label={recording ? 'Recording. Release to finish' : 'Hold to record a voice message'}
-                  ><Icon name="mic" size={19} /></button>
-                </span>}
-                {!recordingPreview && <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>}
+                </span>
+                <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
+                <button type="submit" className="send-button" disabled={!messageText.trim()} aria-label="Send message"><Icon name="send" size={17} /></button>
+                {/* Voice message recording and sending controls removed. */}
               </div>
-              <div className="composer-footnote"><span>{recording ? 'Recording voice message… release to finish' : recordingPreview ? 'Preview your recording, then send or discard it' : 'Messages are sent when you press send'}</span><span><Icon name="shield" size={12} /> Synced conversations only</span></div>
+              <div className="composer-footnote"><span>Messages are sent when you press send</span><span><Icon name="shield" size={12} /> Synced conversations only</span></div>
             </form>
           </section>
         ) : (
@@ -1799,7 +1813,7 @@ function App({ profile, isAdmin = false }) {
             <div className="avatar-picker-note"><Icon name="shield" size={15} /> Choose from 20 preset avatars. You can change your selection anytime.</div>
             <div className="avatar-picker-actions">
               <button className="secondary-button" onClick={() => setShowAvatarPicker(false)}>Cancel</button>
-              <button className="primary-button" onClick={saveAvatarSelection}><Icon name="check" size={15} /> Use this avatar</button>
+              <button className="primary-button" onClick={saveAvatarSelection} disabled={avatarSaving}>{avatarSaving ? 'Saving…' : <><Icon name="check" size={15} /> Use this avatar</>}</button>
             </div>
           </section>
         </div>
