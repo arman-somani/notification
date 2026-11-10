@@ -1640,16 +1640,7 @@ function App({ profile, isAdmin = false }) {
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
-                {!recordingPreview && <span className="emoji-picker-control">
-                  <span className="emoji-picker-tooltip">Choose an emoji</span>
-                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
-                  {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
-                    <div className="composer-emoji-picker-heading"><strong>Choose an emoji</strong><button type="button" onClick={() => setEmojiPickerOpen(false)} aria-label="Close emoji picker"><Icon name="close" size={14} /></button></div>
-                    <div className="composer-emoji-grid">
-                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
-                    </div>
-                  </div>}
-                </span>}
+
                 {!recordingPreview && <span className="voice-record-control">
                   <span className="voice-record-tooltip">{recording ? 'Release to finish' : recordingPreview ? 'Send or discard your recording' : 'Hold to record'}</span>
                   <button
