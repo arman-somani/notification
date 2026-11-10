@@ -898,7 +898,17 @@ function App({ profile, isAdmin = false }) {
         return
       }
 
-      const recorder = new MediaRecorder(stream)
+      // Prefer formats accepted by our Firebase Storage rules. This avoids
+      // browsers silently choosing an unsupported recording container.
+      const supportedAudioTypes = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ]
+      const preferredAudioType = supportedAudioTypes.find((type) =>
+        typeof MediaRecorder.isTypeSupported !== 'function' || MediaRecorder.isTypeSupported(type),
+      )
+      const recorder = new MediaRecorder(stream, preferredAudioType ? { mimeType: preferredAudioType } : undefined)
       recordingStreamRef.current = stream
       recordingChunksRef.current = []
       recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data) }
@@ -973,12 +983,22 @@ function App({ profile, isAdmin = false }) {
       return
     }
 
-    const rawMimeType = recordingPreview.blob?.type || 'audio/webm'
-    const mimeType = rawMimeType.split(';')[0].toLowerCase()
+    const audioBlob = recordingPreview.blob
+    if (!(audioBlob instanceof Blob) || audioBlob.size === 0) {
+      showToast('The recording is empty. Please record your voice message again.')
+      return
+    }
+    if (recordingPreview.durationSeconds > 300) {
+      showToast('Voice messages must be 5 minutes or shorter. Please record a shorter message.')
+      return
+    }
+
+    const rawMimeType = audioBlob.type || 'audio/webm'
+    const mimeType = rawMimeType.split(';')[0].trim().toLowerCase()
     const extensions = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav' }
     const extension = extensions[mimeType]
     if (!extension) {
-      showToast('This browser produced an unsupported audio format. Please record again.')
+      showToast('Your browser created an unsupported audio format. Update your browser or try Chrome, Firefox, or Safari.')
       return
     }
 
@@ -1003,7 +1023,7 @@ function App({ profile, isAdmin = false }) {
         }
       })
 
-      await uploadBytes(storageRef(storage, filePath), recordingPreview.blob, {
+      await uploadBytes(storageRef(storage, filePath), audioBlob, {
         contentType: mimeType,
         customMetadata: { conversationId, messageId: messageRef.id, senderId: uid },
       })
@@ -1023,7 +1043,16 @@ function App({ profile, isAdmin = false }) {
       showToast('Voice message sent.')
     } catch (error) {
       console.error('Voice message send failed:', error)
-      showToast(error?.message || 'Could not send the voice message. Please try again.')
+      const errorCode = error?.code || ''
+      if (errorCode === 'storage/unauthorized' || errorCode === 'storage/unauthenticated') {
+        showToast('Firebase Storage blocked this voice message. Publish the latest storage.rules and confirm the chat members are correct.')
+      } else if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
+        showToast('Firestore blocked this voice message. Publish the latest firestore.rules and confirm the friendship is accepted.')
+      } else if (errorCode.startsWith('storage/')) {
+        showToast('Voice upload failed (' + errorCode + '). Check the Firebase Storage bucket and storage.rules.')
+      } else {
+        showToast(error?.message || 'Could not send the voice message. Please try again.')
+      }
     } finally {
       setSendingVoice(false)
     }
