@@ -199,16 +199,11 @@
 .list-section-label button { border: 0; padding: 2px 0; display: flex; align-items: center; gap: 4px; background: transparent; color: var(--text-soft); font: inherit; font-size: 9px; letter-spacing: 0; cursor: pointer; }
 .list-section-label button:hover { color: var(--text); }
 .conversation-list { padding: 0 10px 12px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-.conversation-item-wrap { display: flex; align-items: center; gap: 3px; width: 100%; min-width: 0; border: 1px solid transparent; border-radius: 11px; transition: background .15s ease, border-color .15s ease; }
+.conversation-item-wrap { display: block; width: 100%; min-width: 0; border: 1px solid transparent; border-radius: 11px; transition: background .15s ease, border-color .15s ease; }
 .conversation-item-wrap:hover { background: var(--surface-soft); }
 .conversation-item-wrap.active { background: var(--surface-muted); border-color: var(--line); }
-.conversation-item-wrap .conversation-item { flex: 1; width: auto; min-width: 0; }
+.conversation-item-wrap .conversation-item { width: 100%; min-width: 0; }
 .conversation-item-wrap .conversation-item:hover, .conversation-item-wrap .conversation-item.active { background: transparent; border-color: transparent; }
-.conversation-delete-button { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; margin-right: 5px; border: 0; border-radius: 8px; background: transparent; color: var(--text-faint); opacity: 0; cursor: pointer; transition: opacity .15s ease, color .15s ease, background .15s ease; }
-.conversation-item-wrap:hover .conversation-delete-button, .conversation-item-wrap:focus-within .conversation-delete-button { opacity: 1; }
-.conversation-delete-button:hover { color: #c04444; background: var(--surface-muted); }
-.conversation-delete-button:disabled { opacity: .45; cursor: wait; }
-@media (hover: none) { .conversation-delete-button { opacity: .75; } }
 .conversation-item { display: flex; align-items: center; gap: 11px; width: 100%; min-width: 0; padding: 10px 10px; border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .conversation-item:hover { background: var(--surface-soft); }
 .conversation-item.active { background: var(--surface-muted); border-color: var(--line); }
