@@ -88,6 +88,7 @@ export default function AccountPrivacyPanel({ profile }) {
         privacy,
         updatedAt: serverTimestamp(),
       })
+      if (realtimeDb) await setRealtimeValue(ref(realtimeDb, 'presenceVisibility/' + uid), lastSeenPrivacy)
       localStorage.setItem('notification-display-name', cleanDisplayName)
       localStorage.setItem('notification-username', normalized)
       localStorage.setItem('notification-username-locked', 'true')
