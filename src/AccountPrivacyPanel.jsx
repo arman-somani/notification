@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { ref, set as setRealtimeValue } from 'firebase/database'
+import { auth, db, realtimeDb } from './firebase/client'
 
 const readList = (key) => {
   try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] }
@@ -117,6 +118,7 @@ export default function AccountPrivacyPanel({ profile }) {
         },
         updatedAt: serverTimestamp(),
       })
+      if (realtimeDb) await setRealtimeValue(ref(realtimeDb, 'presenceVisibility/' + uid), lastSeenPrivacy)
       setNotice('Privacy settings saved to your account.')
     } catch (error) {
       setNotice(error?.message || 'Could not save privacy settings. Please try again.')
