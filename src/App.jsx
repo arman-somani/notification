@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getIdToken, signOut } from 'firebase/auth'
-import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { onDisconnect, onValue, push, ref, serverTimestamp as realtimeServerTimestamp, set as setRealtimeValue } from 'firebase/database'
 import { auth, db, realtimeDb } from './firebase/client'
 import { countUnreadMessages, mapGroupConversation, normalizeMessage } from './firebase/chatModel.js'
@@ -593,7 +593,11 @@ function App({ profile, isAdmin = false }) {
     const unsubscribers = ids.map((conversationId) => onSnapshot(
       query(collection(db, 'conversations', conversationId, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
       (snapshot) => {
-        const latest = snapshot.docs[0]?.data()
+        const latestDocument = snapshot.docs.find((messageDocument) => {
+          const expiry = messageDocument.data().expiresAt
+          return !expiry || expiry.toMillis() > Date.now()
+        })
+        const latest = latestDocument?.data()
         const unread = activeId === conversationId ? 0 : countUnreadMessages(snapshot.docs, uid)
         const preview = latest
           ? latest.deletedAt ? 'Message deleted' : latest.type === 'image' ? 'Photo' : latest.text || 'Message'
@@ -678,20 +682,31 @@ function App({ profile, isAdmin = false }) {
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const generation = ++snapshotGeneration
       const documents = snapshot.docs
-      const messages = documents.map((messageDoc) => normalizeMessage(messageDoc.id, messageDoc.data(), uid))
+      const messages = documents
+        .map((messageDoc) => normalizeMessage(messageDoc.id, messageDoc.data(), uid))
+        .filter((message) => !message.expiresAt || message.expiresAt > Date.now())
       if (generation !== snapshotGeneration) return
 
       // Read state is stored per recipient and shared with every device.
       const unreadIncoming = documents.filter((messageDoc) => {
         const data = messageDoc.data()
-        return data.senderId !== uid && !data.deletedAt && !(Array.isArray(data.readBy) && data.readBy.includes(uid))
+        const expiryMillis = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : 0
+        return data.senderId !== uid
+          && !data.deletedAt
+          && (!expiryMillis || expiryMillis > Date.now())
+          && !(Array.isArray(data.readBy) && data.readBy.includes(uid))
       })
       if (unreadIncoming.length) {
         const batch = writeBatch(db)
         unreadIncoming.forEach((messageDoc) => {
           const data = messageDoc.data()
           const patch = { readBy: arrayUnion(uid) }
-          if (!data.readAt) patch.readAt = serverTimestamp()
+          if (!data.readAt) {
+            patch.readAt = serverTimestamp()
+            patch.expiresAt = Timestamp.fromMillis(Date.now() + MESSAGE_RETENTION_MS)
+          } else if (!data.expiresAt) {
+            patch.expiresAt = Timestamp.fromMillis(data.readAt.toMillis() + MESSAGE_RETENTION_MS)
+          }
           batch.update(messageDoc.ref, patch)
         })
         batch.commit().catch((error) => showToast(error?.code === 'permission-denied'
@@ -766,7 +781,10 @@ function App({ profile, isAdmin = false }) {
       )
 
       return onSnapshot(latestMessageQuery, (snapshot) => {
-        const latestDocument = snapshot.docs[0]
+        const latestDocument = snapshot.docs.find((messageDocument) => {
+          const expiry = messageDocument.data().expiresAt
+          return !expiry || expiry.toMillis() > Date.now()
+        })
         const latest = latestDocument?.data()
         const createdAt = latest?.createdAt?.toDate ? latest.createdAt.toDate() : null
         const preview = latest
