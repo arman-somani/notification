@@ -10,9 +10,11 @@ import { isDesignatedAdminEmail } from './adminConfig'
 const MESSAGE_RETENTION_MS = 86400000
 
 const getConversationActivity = (conversation) => {
+  if (!conversation || typeof conversation !== 'object') return 0
   if (Number.isFinite(conversation.lastActivityAt)) return conversation.lastActivityAt
-  const lastMessageId = conversation.messages?.[conversation.messages.length - 1]?.id || ''
-  const timestampMatch = String(lastMessageId).match(/(?:m|img|voice|fwd|poll)-(\\d+)/)
+  const messages = Array.isArray(conversation.messages) ? conversation.messages : []
+  const lastMessageId = messages[messages.length - 1]?.id || ''
+  const timestampMatch = String(lastMessageId).match(/(?:m|img|voice|fwd|poll)-(\d+)/)
   return timestampMatch ? Number(timestampMatch[1]) : 0
 }
 
@@ -226,6 +228,26 @@ const normalizeDisplayName = (value, fallback = 'Converly user') => {
 }
 
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
+
+const normalizeConversationMessages = (messages) => {
+  if (!Array.isArray(messages)) return []
+  return messages.filter((message) => message && typeof message === 'object').map((message) => {
+    const normalized = {
+      ...message,
+      text: typeof message.text === 'string' ? message.text : '',
+      reactions: Array.isArray(message.reactions) ? message.reactions.filter((reaction) => typeof reaction === 'string') : [],
+    }
+    if (message.type === 'poll') {
+      const poll = message.poll && typeof message.poll === 'object' ? message.poll : {}
+      normalized.poll = {
+        question: typeof poll.question === 'string' ? poll.question : 'Poll',
+        options: Array.isArray(poll.options) ? poll.options.filter((option) => typeof option === 'string') : [],
+        votes: poll.votes && typeof poll.votes === 'object' && !Array.isArray(poll.votes) ? poll.votes : {},
+      }
+    }
+    return normalized
+  })
+}
 
 function App({ profile, isAdmin = false }) {
   const canAccessAdmin = isAdmin && isDesignatedAdminEmail(auth?.currentUser?.email) && auth?.currentUser?.emailVerified === true
@@ -496,7 +518,18 @@ function App({ profile, isAdmin = false }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  const activeConversation = conversations.find((conversation) => conversation.id === activeId)
+  const activeConversationRecord = conversations.find((conversation) => conversation?.id === activeId)
+  // Keep the chat renderer safe when older or partially-written records omit messages.
+  const activeConversation = activeConversationRecord
+    ? {
+      ...activeConversationRecord,
+      name: typeof activeConversationRecord.name === 'string' ? activeConversationRecord.name : 'Conversation',
+      messages: normalizeConversationMessages(activeConversationRecord.messages),
+      memberIds: Array.isArray(activeConversationRecord.memberIds) ? activeConversationRecord.memberIds : [],
+      admins: Array.isArray(activeConversationRecord.admins) ? activeConversationRecord.admins : [],
+      moderators: Array.isArray(activeConversationRecord.moderators) ? activeConversationRecord.moderators : [],
+    }
+    : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const friend = friendContacts.find((person) => person.id === activeId)
@@ -639,10 +672,23 @@ function App({ profile, isAdmin = false }) {
         await setDoc(doc(db, 'users', uid, 'inbox', conversationId), { hidden: true, otherUid: conversation.id, updatedAt: serverTimestamp() }, { merge: true })
         setHiddenConversationIds((ids) => ids.includes(conversationId) ? ids : [...ids, conversationId])
       }
-      setConversations((items) => items.filter((item) => item.id !== conversation.id))
+      setConversations((items) => items.filter((item) => item?.id !== conversation.id))
       if (activeId === conversation.id) {
+        // Close transient chat UI before removing the active record. This guarantees
+        // the main panel returns to its empty state instead of retaining stale overlays.
         setActiveId('')
         setMobileChatOpen(false)
+        setEmojiPickerOpen(false)
+        setShowDetails(false)
+        setShowChatMenu(false)
+        setMessageSearchOpen(false)
+        setMessageSearch('')
+        setSelectedMessageId(null)
+        setReactionPickerMessageId(null)
+        setReplyTarget(null)
+        setEditingMessageId(null)
+        setForwardMessageId(null)
+        setMessageText('')
       }
       showToast('Chat deleted from your inbox. The other person still has their chat.')
     } catch (error) {
@@ -753,6 +799,25 @@ function App({ profile, isAdmin = false }) {
     setShowDetails(false)
     setShowChatMenu(false)
     if (view === 'settings') setView('messages')
+  }
+
+  const insertComposerEmoji = (emoji) => {
+    if (typeof emoji !== 'string' || !emoji) return
+    const input = messageInputRef.current
+    const start = Number.isInteger(input?.selectionStart) ? input.selectionStart : messageText.length
+    const end = Number.isInteger(input?.selectionEnd) ? input.selectionEnd : messageText.length
+    const nextText = messageText.slice(0, start) + emoji + messageText.slice(end)
+    setMessageText(nextText)
+    setEmojiPickerOpen(false)
+    // Keep insertion safe even if the textarea was unmounted between the click
+    // and the next paint (for example, while a recording preview is active).
+    window.requestAnimationFrame(() => {
+      const currentInput = messageInputRef.current
+      if (!currentInput || typeof currentInput.setSelectionRange !== 'function') return
+      const cursor = start + emoji.length
+      currentInput.focus()
+      try { currentInput.setSelectionRange(cursor, cursor) } catch { /* Some mobile keyboards temporarily reject selection updates. */ }
+    })
   }
 
   const handleSend = async (event) => {
@@ -1691,16 +1756,6 @@ function App({ profile, isAdmin = false }) {
               {showPollComposer && <div className="poll-composer"><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask a question" /><textarea value={pollOptions} onChange={(event) => setPollOptions(event.target.value)} placeholder={'Option one\nOption two'} rows={3} /><div><button type="button" onClick={() => setShowPollComposer(false)}>Cancel</button><button type="button" onClick={createPoll}>Create poll</button></div></div>}
               <div className="composer-options">{activeConversation.status === 'group' && <button type="button" className="view-once-toggle" onClick={() => setShowPollComposer((show) => !show)}>Create poll</button>}<span className="retention-policy-note"><Icon name="shield" size={12} /> Messages disappear 24 hours after they are seen</span></div>
               <div className="composer">
-                {!recordingPreview && <span className="emoji-picker-control">
-                  <span className="emoji-picker-tooltip">Choose an emoji</span>
-                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
-                  {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
-                    <div className="composer-emoji-picker-heading"><strong>Choose an emoji</strong><button type="button" onClick={() => setEmojiPickerOpen(false)} aria-label="Close emoji picker"><Icon name="close" size={14} /></button></div>
-                    <div className="composer-emoji-grid">
-                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
-                    </div>
-                  </div>}
-                </span>}
                 {recordingPreview ? (
                   <div className="composer-voice-preview" aria-label="Voice message preview">
                     <VoiceMessagePlayer className="voice-preview-player" src={recordingPreview.url} />
@@ -1724,11 +1779,11 @@ function App({ profile, isAdmin = false }) {
                 )}
                 {!recordingPreview && <span className="emoji-picker-control">
                   <span className="emoji-picker-tooltip">Choose an emoji</span>
-                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={() => setEmojiPickerOpen((open) => !open)} aria-label="Open emoji picker" aria-expanded={emojiPickerOpen} title="Choose an emoji"><Icon name="smile" size={19} /></button>
-                  {emojiPickerOpen && <div className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
+                  <button type="button" className={'composer-action emoji-action' + (emojiPickerOpen ? ' active' : '')} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setEmojiPickerOpen((open) => !open) }} aria-label={emojiPickerOpen ? 'Close emoji picker' : 'Open emoji picker'} aria-expanded={emojiPickerOpen} aria-controls="converly-composer-emoji-picker" title="Choose an emoji"><Icon name="smile" size={19} /></button>
+                  {emojiPickerOpen && <div id="converly-composer-emoji-picker" className="composer-emoji-picker" role="dialog" aria-label="Choose an emoji">
                     <div className="composer-emoji-picker-heading"><strong>Choose an emoji</strong><button type="button" onClick={() => setEmojiPickerOpen(false)} aria-label="Close emoji picker"><Icon name="close" size={14} /></button></div>
                     <div className="composer-emoji-grid">
-                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => { setMessageText((text) => text + emoji); setEmojiPickerOpen(false); messageInputRef.current?.focus() }} aria-label={'Insert ' + emoji}>{emoji}</button>)}
+                      {composerEmojiOptions.map((emoji, index) => <button type="button" key={emoji + index} onClick={() => insertComposerEmoji(emoji)} aria-label={'Insert ' + emoji}>{emoji}</button>)}
                     </div>
                   </div>}
                 </span>}
