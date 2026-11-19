@@ -1189,7 +1189,7 @@ function App({ profile, isAdmin = false }) {
     if (!file || !activeConversation) return
     input.value = ''
 
-    if (!/^image\\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
       showToast('Choose a JPG, PNG, WEBP or GIF image.')
       return
     }
