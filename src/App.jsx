@@ -637,9 +637,13 @@ function App({ profile, isAdmin = false }) {
     : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
+    const isGroup = activeConversationRecord?.status === 'group'
     const friend = friendContacts.find((person) => person.id === activeId)
-    if (!uid || !db || !friend) return undefined
-    const conversationId = directConversationId(uid, friend.id)
+    if (!uid || !db || (!friend && !isGroup)) return undefined
+
+    const conversationId = isGroup
+      ? (activeConversationRecord.firebaseConversationId || activeId)
+      : directConversationId(uid, friend.id)
     const messagesQuery = query(
       collection(db, 'conversations', conversationId, 'messages'),
       orderBy('createdAt', 'asc'),
@@ -648,44 +652,75 @@ function App({ profile, isAdmin = false }) {
     let snapshotGeneration = 0
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const generation = ++snapshotGeneration
-      const messages = snapshot.docs.map((messageDoc) => {
-        const data = messageDoc.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-        return {
-          id: messageDoc.id,
-          from: data.senderId === uid ? 'me' : 'them',
-          senderId: data.senderId,
-          type: data.type || 'text',
-          text: data.text || '',
-          attachmentPath: data.attachmentPath || '',
-          viewOnce: data.viewOnce === true,
-          viewed: data.senderId !== uid && Boolean(data.viewedByUid),
-          replyToId: data.replyToId,
-          replyToText: data.replyToText,
-          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
-          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-          status: data.senderId === uid ? 'sent' : 'received',
-        }
-      })
+      const documents = snapshot.docs
+      const messages = documents.map((messageDoc) => normalizeMessage(messageDoc.id, messageDoc.data(), uid))
       if (generation !== snapshotGeneration) return
+
+      // Read state is stored per recipient and shared with every device.
+      const unreadIncoming = documents.filter((messageDoc) => {
+        const data = messageDoc.data()
+        return data.senderId !== uid && !data.deletedAt && !(Array.isArray(data.readBy) && data.readBy.includes(uid))
+      })
+      if (unreadIncoming.length) {
+        const batch = writeBatch(db)
+        unreadIncoming.forEach((messageDoc) => {
+          const data = messageDoc.data()
+          const patch = { readBy: arrayUnion(uid) }
+          if (!data.readAt) patch.readAt = serverTimestamp()
+          batch.update(messageDoc.ref, patch)
+        })
+        batch.commit().catch((error) => showToast(error?.code === 'permission-denied'
+          ? 'Read receipts were denied. Deploy the updated Firestore rules.'
+          : error?.message || 'Could not update read receipts.'))
+      }
+
       const latestMessage = messages[messages.length - 1]
       const preview = latestMessage
-        ? latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
-        : 'Start a conversation'
+        ? latestMessage.deleted ? 'Message deleted' : latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
+        : (isGroup ? 'Group created' : 'Start a conversation')
+      const unread = isGroup ? 0 : 0
       setConversations((items) => {
         const exists = items.some((item) => item.id === activeId)
-        if (!exists) return items
-        return items.map((item) => item.id === activeId
-          ? { ...item, firebaseConversationId: conversationId, messages, preview, time: latestMessage?.time || item.time }
-          : item)
+        if (!exists && !isGroup) return items
+        const targetId = isGroup ? conversationId : activeId
+        const currentGroup = items.find((item) => item.id === targetId)
+        const nextItem = currentGroup || (isGroup ? mapGroupConversation(conversationId, activeConversationRecord, uid) : null)
+        return isGroup && !currentGroup
+          ? [...items, { ...nextItem, firebaseConversationId: conversationId, messages, preview, unread, time: latestMessage?.time || '' }]
+          : items.map((item) => (item.id === targetId
+            ? { ...item, firebaseConversationId: conversationId, messages, preview, unread, time: latestMessage?.time || item.time, lastActivityAt: latestMessage?.createdAt || item.lastActivityAt || 0 }
+            : item))
       })
     }, (error) => {
       setToast(error?.code === 'permission-denied'
         ? 'Message sync permission denied. Deploy the latest Firestore rules.'
         : error?.message || 'Could not sync messages.')
     })
+
     return unsubscribe
-  }, [activeId, friendContacts, auth?.currentUser?.uid])
+  }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
+
+  // A per-conversation RTDB subscription powers live typing indicators on every client.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    const isGroup = activeConversationRecord?.status === 'group'
+    const friend = friendContacts.find((person) => person.id === activeId)
+    if (!uid || !realtimeDb || (!isGroup && !friend)) {
+      setTypingUsers([])
+      return undefined
+    }
+    const conversationId = isGroup
+      ? (activeConversationRecord.firebaseConversationId || activeId)
+      : directConversationId(uid, friend.id)
+    return onValue(ref(realtimeDb, 'typing/' + conversationId), (snapshot) => {
+      const now = Date.now()
+      const users = Object.entries(snapshot.val() || {})
+        .filter(([memberUid, value]) => memberUid !== uid && value?.isTyping === true && now - Number(value.updatedAt || 0) < 12000)
+        .map(([memberUid]) => memberUid)
+      setTypingUsers(users)
+    })
+  }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
+
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     if (!uid || !db || friendContacts.length === 0) return undefined
@@ -695,25 +730,17 @@ function App({ profile, isAdmin = false }) {
       const latestMessageQuery = query(
         collection(db, 'conversations', conversationId, 'messages'),
         orderBy('createdAt', 'desc'),
-        limit(1),
+        limit(100),
       )
 
       return onSnapshot(latestMessageQuery, (snapshot) => {
-        const latest = snapshot.docs[0]
-        if (!latest) {
-          setConversations((items) => items.map((item) => item.id === person.id
-            ? { ...item, firebaseConversationId: conversationId }
-            : item))
-          return
-        }
-
-        const data = latest.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : null
-        const preview = data.type === 'image'
-          ? 'Photo'
-          : data.type === 'voice'
-            ? 'Voice message'
-            : data.text || 'Message'
+        const latestDocument = snapshot.docs[0]
+        const latest = latestDocument?.data()
+        const createdAt = latest?.createdAt?.toDate ? latest.createdAt.toDate() : null
+        const preview = latest
+          ? latest.deletedAt ? 'Message deleted' : latest.type === 'image' ? 'Photo' : latest.type === 'voice' ? 'Voice message' : latest.text || 'Message'
+          : 'Start a conversation'
+        const unread = activeId === person.id ? 0 : countUnreadMessages(snapshot.docs, uid)
 
         setConversations((items) => items.map((item) => item.id === person.id ? {
           ...item,
@@ -721,9 +748,7 @@ function App({ profile, isAdmin = false }) {
           preview,
           time: createdAt ? createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
           lastActivityAt: createdAt ? createdAt.getTime() : item.lastActivityAt || 0,
-          unread: activeId === person.id || data.senderId === uid
-            ? 0
-            : Math.max(1, item.unread || 0),
+          unread,
         } : item))
       }, (error) => {
         if (error?.code === 'permission-denied') {
@@ -736,6 +761,7 @@ function App({ profile, isAdmin = false }) {
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [friendContacts, activeId, auth?.currentUser?.uid])
+
 
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
