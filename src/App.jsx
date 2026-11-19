@@ -281,6 +281,7 @@ function App({ profile, isAdmin = false }) {
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
   const [typingUsers, setTypingUsers] = useState([])
+  const [composerFocused, setComposerFocused] = useState(false)
   const typingPublishedRef = useRef(false)
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
   const [friendRequestError, setFriendRequestError] = useState('')
@@ -1032,15 +1033,18 @@ function App({ profile, isAdmin = false }) {
   }
 
   useEffect(() => {
-    const isTyping = Boolean(messageText.trim())
-    publishTyping(isTyping, true)
-    if (!isTyping) return undefined
+    const isTyping = Boolean(messageText.trim()) && composerFocused
+    if (!isTyping) {
+      publishTyping(false)
+      return undefined
+    }
+    publishTyping(true, true)
     const heartbeat = window.setInterval(() => publishTyping(true, true), 5000)
     return () => {
       window.clearInterval(heartbeat)
       publishTyping(false)
     }
-  }, [Boolean(messageText.trim()), activeId])
+  }, [Boolean(messageText.trim()), composerFocused, activeId])
 
   const handleSend = async (event) => {
     event?.preventDefault()
@@ -2244,7 +2248,7 @@ function App({ profile, isAdmin = false }) {
                   </div>
                 ) : (
                   <>
-                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => { setMessageText(event.target.value); publishTyping(Boolean(event.target.value.trim())) }} onBlur={() => publishTyping(false)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
