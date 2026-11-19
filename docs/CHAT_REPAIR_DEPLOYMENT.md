@@ -81,7 +81,7 @@ Use two different Gmail accounts that have completed registration and accepted e
 4. Open a received conversation to check read receipts and unread counts on the other account. Confirm a message expires 24 hours after first read.
 5. Set last-seen visibility to `nobody`, `contacts` and `everyone`; verify access from a friend and a non-friend account.
 6. Block a direct contact from one account. Confirm new direct text and media sends are rejected in both the UI and Firebase rules.
-7. Send a view-once image to a one-to-one chat and to a group. Confirm each recipient can open once, a second open is denied, a different group recipient gets their own first open, and the sender can preview their sent copy.
+7. Send a view-once image to a one-to-one chat and to a group. Confirm each recipient can open once, a second open is denied, a different group recipient gets their own first open, and the sender can open their sent copy once from their own account.
 8. Test the live Vercel site, not only localhost, including image upload/open from the production origin.
 
 ## Security notes and limits
