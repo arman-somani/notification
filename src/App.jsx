@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getIdToken, signOut } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { onDisconnect, onValue, push, ref, serverTimestamp as realtimeServerTimestamp, set as setRealtimeValue } from 'firebase/database'
+import { auth, db, realtimeDb } from './firebase/client'
+import { countUnreadMessages, mapGroupConversation, normalizeMessage } from './firebase/chatModel.js'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
@@ -278,6 +280,7 @@ function App({ profile, isAdmin = false }) {
   const [newChatSearch, setNewChatSearch] = useState('')
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
+  const [typingUsers, setTypingUsers] = useState([])
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
   const [friendRequestError, setFriendRequestError] = useState('')
   const [showFriendRequests, setShowFriendRequests] = useState(false)
@@ -428,7 +431,7 @@ function App({ profile, isAdmin = false }) {
           const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
-          return { id: contactUid, name: normalizeDisplayName(data.displayName || data.username), username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+          return { id: contactUid, name: normalizeDisplayName(data.displayName || data.username), username: data.username, avatarId: data.avatarId, privacy: data.privacy || {}, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
         if (showNewChat && usernameTerm.length >= 3) {
@@ -481,6 +484,108 @@ function App({ profile, isAdmin = false }) {
     return () => { cancelled = true }
   }, [showNewChat, showFriendRequests, newChatSearch, auth?.currentUser?.uid])
 
+
+
+  // Keep group conversations backed by Firestore membership, not browser-only state.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return undefined
+    const groupsQuery = query(collection(db, 'conversations'), where('memberIds', 'array-contains', uid))
+    return onSnapshot(groupsQuery, (snapshot) => {
+      const groups = snapshot.docs
+        .map((item) => ({ id: item.id, data: item.data() }))
+        .filter((item) => item.data.type === 'group')
+        .map((item) => mapGroupConversation(item.id, item.data, uid))
+      setConversations((current) => {
+        const previousGroups = new Map(current.filter((item) => item.status === 'group').map((item) => [item.id, item]))
+        const nextGroups = groups.map((group) => ({
+          ...previousGroups.get(group.id),
+          ...group,
+          messages: previousGroups.get(group.id)?.messages || [],
+          unread: previousGroups.get(group.id)?.unread || 0,
+          favorite: previousGroups.get(group.id)?.favorite || false,
+          archived: previousGroups.get(group.id)?.archived || false,
+          muted: previousGroups.get(group.id)?.muted || false,
+          pinned: previousGroups.get(group.id)?.pinned || false,
+        }))
+        return [...current.filter((item) => item.status !== 'group'), ...nextGroups]
+      })
+    }, (error) => {
+      showToast(error?.code === 'permission-denied'
+        ? 'Group access was denied. Deploy the updated Firestore rules.'
+        : error?.message || 'Could not sync your groups.')
+    })
+  }, [auth?.currentUser?.uid])
+
+  // Publish one connection record per browser tab; Firebase removes stale records on disconnect.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb) return undefined
+    let active = true
+    let connectionRef = null
+    const connectedRef = ref(realtimeDb, '.info/connected')
+    const unsubscribe = onValue(connectedRef, (snapshot) => {
+      if (!active || snapshot.val() !== true) return
+      connectionRef = push(ref(realtimeDb, 'presence/' + uid))
+      const offlineValue = { state: 'offline', lastChanged: realtimeServerTimestamp() }
+      onDisconnect(connectionRef).set(offlineValue).then(() => {
+        if (active) return setRealtimeValue(connectionRef, { state: 'online', lastChanged: realtimeServerTimestamp() })
+        return undefined
+      }).catch((error) => console.warn('[Converly] Could not publish presence:', error))
+    })
+    return () => {
+      active = false
+      unsubscribe()
+      if (connectionRef) {
+        onDisconnect(connectionRef).cancel().catch(() => {})
+        setRealtimeValue(connectionRef, { state: 'offline', lastChanged: realtimeServerTimestamp() }).catch(() => {})
+      }
+    }
+  }, [auth?.currentUser?.uid])
+
+  // Friends can see presence only when the profile privacy setting permits it.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb || friendContacts.length === 0) return undefined
+    const friends = friendContacts
+    const unsubscribers = friends.map((person) => onValue(ref(realtimeDb, 'presence/' + person.id), (snapshot) => {
+      const presence = snapshot.val() || {}
+      const isOnline = Object.values(presence).some((entry) => entry?.state === 'online')
+      const canSeePresence = person.privacy?.whoCanSeeLastSeen !== 'nobody'
+      const status = canSeePresence && isOnline ? 'online' : 'offline'
+      setFriendContacts((items) => items.map((item) => item.id === person.id ? { ...item, status } : item))
+      setConversations((items) => items.map((item) => item.id === person.id ? { ...item, status } : item))
+    }))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
+  // Keep group previews and unread counts synchronized even when a group is not open.
+  const groupConversationIds = conversations.filter((item) => item.status === 'group').map((item) => item.firebaseConversationId || item.id).join('|')
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || !groupConversationIds) return undefined
+    const ids = groupConversationIds.split('|').filter(Boolean)
+    const unsubscribers = ids.map((conversationId) => onSnapshot(
+      query(collection(db, 'conversations', conversationId, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
+      (snapshot) => {
+        const latest = snapshot.docs[0]?.data()
+        const unread = activeId === conversationId ? 0 : countUnreadMessages(snapshot.docs, uid)
+        const preview = latest
+          ? latest.deletedAt ? 'Message deleted' : latest.type === 'image' ? 'Photo' : latest.text || 'Message'
+          : 'Group created'
+        const latestAt = latest?.createdAt?.toDate ? latest.createdAt.toDate().getTime() : 0
+        setConversations((items) => items.map((item) => item.id === conversationId ? {
+          ...item,
+          unread,
+          preview,
+          time: latestAt ? new Date(latestAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
+          lastActivityAt: latestAt || item.lastActivityAt || 0,
+        } : item))
+      },
+      (error) => showToast(error?.message || 'Could not sync group activity.'),
+    ))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [groupConversationIds, activeId, auth?.currentUser?.uid])
 
   useEffect(() => {
     localStorage.setItem('notification-sound-enabled', String(soundEnabled))
@@ -1348,7 +1453,7 @@ function App({ profile, isAdmin = false }) {
         if (senderProfile.exists()) {
           const data = senderProfile.data()
           const name = normalizeDisplayName(data.displayName || data.username)
-          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
+          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, privacy: data.privacy || {}, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
         }
         showToast('Friend request accepted')
       } else {
