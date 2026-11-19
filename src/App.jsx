@@ -573,6 +573,17 @@ function App({ profile, isAdmin = false }) {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
 
+  // Each account mirrors only its own accepted friendships; RTDB requires both sides.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb || friendContacts.length === 0) return undefined
+    friendContacts.forEach((person) => {
+      setRealtimeValue(ref(realtimeDb, 'friendships/' + uid + '/' + person.id), true)
+        .catch((error) => console.warn('[Converly] Could not publish friend presence access:', error))
+    })
+    return undefined
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
   // Keep group previews and unread counts synchronized even when a group is not open.
   const groupConversationIds = conversations.filter((item) => item.status === 'group').map((item) => item.firebaseConversationId || item.id).join('|')
   useEffect(() => {
