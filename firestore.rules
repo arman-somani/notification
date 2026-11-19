@@ -37,6 +37,23 @@ service cloud.firestore {
         );
     }
 
+    function canReceiveDirectMessage(conversationId) {
+      let conversation = get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+      let members = conversation.memberIds;
+      let recipientUid = members[0] == request.auth.uid ? members[1] : members[0];
+      let recipientPath = /databases/$(database)/documents/users/$(recipientUid);
+      return conversation.type == 'group'
+        || (
+          members.size() == 2
+          && exists(recipientPath)
+          && (
+            !('privacy' in get(recipientPath).data)
+            || !('whoCanMessage' in get(recipientPath).data.privacy)
+            || get(recipientPath).data.privacy.whoCanMessage != 'nobody'
+          )
+        );
+    }
+
     function isBlockedBetweenMembers(conversationId) {
       let members = get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
       return members.size() == 2
@@ -317,6 +334,7 @@ service cloud.firestore {
 
         allow create: if isConversationMember(conversationId)
           && !isBlockedBetweenMembers(conversationId)
+          && canReceiveDirectMessage(conversationId)
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt', 'readBy', 'reactions'])
           && request.resource.data.type in ['text', 'image']
