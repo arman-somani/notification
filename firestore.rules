@@ -216,6 +216,7 @@ service cloud.firestore {
           (
             !('type' in request.resource.data)
             && request.resource.data.memberIds.size() == 2
+            && request.resource.data.keys().hasOnly(['createdBy', 'memberIds', 'createdAt', 'updatedAt'])
             && isAcceptedFriend(
               request.resource.data.memberIds[0] == request.auth.uid
                 ? request.resource.data.memberIds[1]
