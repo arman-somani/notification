@@ -428,7 +428,6 @@ service cloud.firestore {
             (
               resource.data.type == 'image'
               && resource.data.viewOnce == true
-              && resource.data.senderId != request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewedByUids'])
               && request.resource.data.viewedByUids is list
               && request.resource.data.viewedByUids.hasAll(
@@ -465,7 +464,6 @@ service cloud.firestore {
             && isConversationMember(conversationId)
             && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.type == 'image'
             && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.viewOnce == true
-            && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.senderId != request.auth.uid
             && request.resource.data.viewerUid == viewerUid
             && request.resource.data.keys().hasOnly(['viewerUid', 'viewedAt'])
             && request.resource.data.viewedAt is timestamp
