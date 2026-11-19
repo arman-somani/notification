@@ -54,6 +54,13 @@ service cloud.firestore {
         );
     }
 
+    function hasOneNewGroupMemberRecord(conversationId) {
+      let addedMemberIds = request.resource.data.memberIds.removeAll(resource.data.memberIds);
+      return addedMemberIds.size() == 1
+        && !exists(/databases/$(database)/documents/conversations/$(conversationId)/members/$(addedMemberIds[0]))
+        && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(addedMemberIds[0]));
+    }
+
     function isBlockedBetweenMembers(conversationId) {
       let members = get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
       return members.size() == 2
@@ -218,8 +225,10 @@ service cloud.firestore {
           ||
           (
             request.resource.data.type == 'group'
-            && request.resource.data.memberIds.size() >= 2
-            && request.resource.data.memberIds.size() <= 50
+            && request.resource.data.memberIds.size() == 2
+            && request.resource.data.memberIds[0] != request.resource.data.memberIds[1]
+            && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(request.resource.data.memberIds[0] == request.auth.uid ? request.resource.data.memberIds[1] : request.resource.data.memberIds[0]))
             && request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 48
@@ -260,7 +269,9 @@ service cloud.firestore {
                   (
                     request.resource.data.memberIds is list
                     && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+                    && request.resource.data.memberIds.size() <= 50
                     && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+                    && hasOneNewGroupMemberRecord(conversationId)
                     && request.resource.data.adminIds == resource.data.adminIds
                     && request.resource.data.moderatorIds == resource.data.moderatorIds
                   )
