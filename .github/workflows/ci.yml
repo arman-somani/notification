@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, fix/full-site-chat-typography]
+    branches: [main, fix/full-site-chat-typography, fix/converly-chat-emoji-and-sync]
   pull_request:
   workflow_dispatch:
 
