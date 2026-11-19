@@ -35,7 +35,7 @@ Use the same Cloudflare account and Worker name that owns `notification-api.medi
 
 - `GET /health`: health check.
 - `POST /media/upload`: Firebase bearer token + multipart `conversationId`, `messageId`, and `file`. Checks Firestore membership and uploads a private ImageKit asset.
-- `POST /media/open`: Firebase bearer token + JSON `conversationId` and `messageId`. The sender can preview their image without consuming the recipient's open. Each recipient has an independent Firestore view marker, created atomically with a per-message viewer list; the Worker streams private image bytes without returning a reusable ImageKit URL. The sender can preview their own copy without consuming a recipient view.
+- `POST /media/open`: Firebase bearer token + JSON `conversationId` and `messageId`. The sender can preview their image without consuming the recipient's open. Each recipient has an independent Firestore view marker, created atomically with a per-message viewer list; the Worker streams private image bytes without returning a reusable ImageKit URL. The sender's own account is also limited to one view.
 
 The Worker uses the Firestore REST API with the user's Firebase ID token, so Firestore Security Rules continue to apply.
 
