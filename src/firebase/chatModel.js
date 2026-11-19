@@ -62,7 +62,7 @@ export const mapGroupConversation = (id, data = {}, uid = '') => {
     id,
     firebaseConversationId: id,
     name: title,
-    initials: title.split(/\\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+    initials: title.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
     status: 'group',
     members: memberIds.length + ' members',
     memberIds,
