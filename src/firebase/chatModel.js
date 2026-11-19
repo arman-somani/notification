@@ -45,7 +45,8 @@ export const normalizeMessage = (id, data = {}, uid = '') => {
 
 export const countUnreadMessages = (documents = [], uid = '') => documents.reduce((count, document) => {
   const data = typeof document?.data === 'function' ? document.data() : document || {}
-  if (!data.senderId || data.senderId === uid || data.deletedAt) return count
+  const expiresAt = timestampToMillis(data.expiresAt)
+  if (!data.senderId || data.senderId === uid || data.deletedAt || (expiresAt && expiresAt <= Date.now())) return count
   const readBy = Array.isArray(data.readBy) ? data.readBy : []
   return readBy.includes(uid) ? count : count + 1
 }, 0)
