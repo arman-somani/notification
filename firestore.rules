@@ -149,6 +149,11 @@ service cloud.firestore {
           !('privacy' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data)
           || !('discoverable' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy)
           || get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.discoverable != false
+        )
+        && (
+          !('privacy' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data)
+          || !('whoCanMessage' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy)
+          || get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.whoCanMessage != 'nobody'
         );
       allow update: if signedIn()
         && resource.data.recipientId == request.auth.uid
@@ -371,6 +376,20 @@ service cloud.firestore {
             )
             ||
             (
+              resource.data.type == 'image'
+              && resource.data.viewOnce == true
+              && resource.data.senderId != request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewedByUids'])
+              && request.resource.data.viewedByUids is list
+              && request.resource.data.viewedByUids.hasAll(
+                ('viewedByUids' in resource.data && resource.data.viewedByUids is list) ? resource.data.viewedByUids : []
+              )
+              && request.auth.uid in request.resource.data.viewedByUids
+              && request.resource.data.viewedByUids.size()
+                <= (('viewedByUids' in resource.data && resource.data.viewedByUids is list) ? resource.data.viewedByUids.size() : 0) + 1
+            )
+            ||
+            (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
               && request.resource.data.reactions is map
               && request.resource.data.reactions.diff(
@@ -399,7 +418,7 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.senderId != request.auth.uid
             && request.resource.data.viewerUid == viewerUid
             && request.resource.data.keys().hasOnly(['viewerUid', 'viewedAt'])
-            && request.resource.data.viewedAt == request.time
+            && request.resource.data.viewedAt is timestamp
             && !exists(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)/views/$(viewerUid));
           allow update, delete: if false;
         }
