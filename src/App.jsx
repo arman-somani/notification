@@ -951,40 +951,84 @@ function App({ profile, isAdmin = false }) {
     })
   }
 
+  const getActiveConversationId = (uid = auth?.currentUser?.uid) => {
+    if (!uid || !activeConversation) return ''
+    return activeConversation.status === 'group'
+      ? (activeConversation.firebaseConversationId || activeId)
+      : (activeConversation.firebaseConversationId || directConversationId(uid, activeId))
+  }
+
+  const publishTyping = (isTyping) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !realtimeDb || !conversationId) return
+    setRealtimeValue(ref(realtimeDb, 'typing/' + conversationId + '/' + uid), {
+      isTyping: Boolean(isTyping),
+      updatedAt: Date.now(),
+    }).catch((error) => console.warn('[Converly] Could not update typing state:', error))
+  }
+
   const handleSend = async (event) => {
     event?.preventDefault()
     const text = messageText.trim()
     if (!text || !activeConversation) return
-    if (activeConversation.blocked) { showToast('Unblock this user before sending messages.'); return }
-    const currentUid = auth?.currentUser?.uid
-    if (currentUid && db && friendContacts.some((person) => person.id === activeId)) {
+    const uid = auth?.currentUser?.uid
+    const isGroup = activeConversation.status === 'group'
+    const isAcceptedFriend = friendContacts.some((person) => person.id === activeId)
+    if (!uid || !db || (!isGroup && !isAcceptedFriend)) {
+      showToast('This conversation is not connected to your Firebase account.')
+      return
+    }
+    if (activeConversation.blocked) {
+      showToast('Unblock this user before sending messages.')
+      return
+    }
+
+    if (!isGroup) {
       try {
-        const [myBlock, theirBlock] = await Promise.all([
-          getDoc(doc(db, 'users', currentUid, 'blocks', activeId)),
-          getDoc(doc(db, 'users', activeId, 'blocks', currentUid)),
+        const [myBlock, theirBlock, recipientSnapshot] = await Promise.all([
+          getDoc(doc(db, 'users', uid, 'blocks', activeId)),
+          getDoc(doc(db, 'users', activeId, 'blocks', uid)),
+          getDoc(doc(db, 'users', activeId)),
         ])
         if (myBlock.exists()) { showToast('You blocked this user. Unblock them before sending messages.'); return }
         if (theirBlock.exists()) { showToast('You cannot send messages because this user has blocked you.'); return }
+        const messagePrivacy = recipientSnapshot.data()?.privacy?.whoCanMessage
+        if (messagePrivacy === 'nobody') { showToast('This person is not accepting messages right now.'); return }
       } catch (error) {
-        showToast(error?.code === 'permission-denied' ? 'Could not verify this chat’s block status. Please try again.' : error?.message || 'Could not verify this chat. Please try again.')
+        showToast(error?.code === 'permission-denied' ? 'Could not verify this chat’s block or privacy status. Please try again.' : error?.message || 'Could not verify this chat. Please try again.')
         return
       }
     }
+
+    const conversationId = getActiveConversationId(uid)
+    if (!conversationId) { showToast('This conversation is not available.'); return }
+
     if (editingMessageId) {
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
-      setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
+      try {
+        await updateDoc(doc(db, 'conversations', conversationId, 'messages', editingMessageId), {
+          text,
+          editedAt: serverTimestamp(),
+        })
+        setEditingMessageId(null)
+        setMessageText('')
+        publishTyping(false)
+        messageInputRef.current?.focus()
+      } catch (error) {
+        showToast(error?.code === 'permission-denied' ? 'Only the message author can edit this message. Deploy the latest Firestore rules if the error continues.' : error?.message || 'Could not save this edit.')
+      }
+      return
     }
 
-    // Clear the writing box immediately. Restore only if the message write itself fails.
-    setMessageText('')
-    const uid = auth?.currentUser?.uid
-    const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
-    if (isAcceptedFriend) {
-      const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
-      const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
-      let sendStage = 'checking conversation membership'
-
-      try {
+    let sendStage = 'checking conversation membership'
+    try {
+      if (isGroup) {
+        const groupSnapshot = await getDoc(doc(db, 'conversations', conversationId))
+        const groupData = groupSnapshot.data()
+        if (!groupSnapshot.exists() || groupData?.type !== 'group' || !Array.isArray(groupData.memberIds) || !groupData.memberIds.includes(uid)) {
+          throw new Error('You are no longer a member of this group.')
+        }
+      } else {
         await runTransaction(db, async (transaction) => {
           const conversationRef = doc(db, 'conversations', conversationId)
           const snapshot = await transaction.get(conversationRef)
@@ -999,40 +1043,31 @@ function App({ profile, isAdmin = false }) {
             throw new Error('This conversation does not have the expected members.')
           }
         })
-
-        sendStage = 'writing the message'
-        await setDoc(messageRef, {
-          senderId: uid,
-          type: 'text',
-          text,
-          createdAt: serverTimestamp(),
-          ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-        })
-      } catch (error) {
-        setMessageText((current) => current.trim() ? current : text)
-        const details = error?.code === 'permission-denied'
-          ? 'Firestore denied ' + sendStage + '. Confirm that the latest firestore.rules are deployed to notification-32ea1.'
-          : error?.message || 'Could not send the message. Please try again.'
-        showToast(details)
-        return
       }
 
-      // Inbox preview and latest-activity ordering are derived from the message
-      // subcollection listener. No second write to the conversation document is needed.
+      sendStage = 'writing the message'
+      const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+      await setDoc(messageRef, {
+        senderId: uid,
+        type: 'text',
+        text,
+        readBy: [uid],
+        reactions: {},
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+      })
+      setMessageText('')
       setReplyTarget(null)
+      publishTyping(false)
       messageInputRef.current?.focus()
-      return
+    } catch (error) {
+      const details = error?.code === 'permission-denied'
+        ? 'Firestore denied ' + sendStage + '. Deploy the latest firestore.rules to notification-32ea1.'
+        : error?.message || 'Could not send the message. Please try again.'
+      showToast(details)
     }
-
-    const message = {
-      id: 'm-' + Date.now(), from: 'me', type: 'text', text,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: 'sent',
-      ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-    }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now', lastActivityAt: Date.now() } : item))
-    setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
+
 
   const getMediaApiUrl = () => (String(import.meta.env.VITE_NOTIFICATION_API_URL || '').trim() || 'https://notification-api.mediatoolkit.workers.dev').replace(/\/+$/, '')
 
@@ -1339,22 +1374,39 @@ function App({ profile, isAdmin = false }) {
 
   const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
   const beginEdit = (message) => { setEditingMessageId(message.id); setReplyTarget(null); setMessageText(message.text || ''); setSelectedMessageId(null); messageInputRef.current?.focus() }
-  const deleteMessage = (messageId) => {
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.filter((message) => message.id !== messageId) } : item))
-    setSelectedMessageId(null); showToast('Message removed from this browser preview')
+  const deleteMessage = async (messageId) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !conversationId || !messageId) return
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId, 'messages', messageId), {
+        text: '',
+        deletedAt: serverTimestamp(),
+      })
+      setSelectedMessageId(null)
+      showToast('Message deleted for everyone.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Only the message author can delete this message. Deploy the latest Firestore rules if needed.' : error?.message || 'Could not delete this message.')
+    }
   }
-  const toggleMessageReaction = (messageId, emoji) => {
-    setConversations((items) => items.map((item) => item.id === activeId ? {
-      ...item,
-      messages: item.messages.map((message) => {
-        if (message.id !== messageId) return message
-        const reactions = message.reactions || []
-        return { ...message, reactions: reactions.includes(emoji) ? reactions.filter((reaction) => reaction !== emoji) : [...reactions, emoji] }
-      }),
-    } : item))
-    setSelectedMessageId(null)
-    setReactionPickerMessageId(null)
+
+  const toggleMessageReaction = async (messageId, emoji) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    const message = activeConversation?.messages?.find((entry) => entry.id === messageId)
+    if (!uid || !db || !conversationId || !message || !emoji) return
+    const reactions = { ...(message.reactionByUid || {}) }
+    if (reactions[uid] === emoji) delete reactions[uid]
+    else reactions[uid] = emoji
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId, 'messages', messageId), { reactions })
+      setSelectedMessageId(null)
+      setReactionPickerMessageId(null)
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firestore denied this reaction. Deploy the latest Firestore rules.' : error?.message || 'Could not sync this reaction.')
+    }
   }
+
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
     setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
