@@ -1510,7 +1510,7 @@ function App({ profile, isAdmin = false }) {
       id: groupRef.id,
       firebaseConversationId: groupRef.id,
       name: title,
-      initials: title.split(/\\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+      initials: title.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
       status: 'group',
       members: '2 members',
       memberIds: initialMemberIds,
