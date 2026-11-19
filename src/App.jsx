@@ -1413,17 +1413,121 @@ function App({ profile, isAdmin = false }) {
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
-  const createGroup = () => {
+  const createGroup = async () => {
+    const uid = auth?.currentUser?.uid
     const title = groupName.trim()
-    const selected = directory.filter((person) => groupMemberIds.includes(person.id))
-    if (!title) { showToast('Enter a group name'); return }
-    if (!selected.length) { showToast('Choose at least one group member'); return }
-    const id = 'group-' + Date.now()
-    const group = { id, name: title, initials: title.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), tone: 6, status: 'group', members: (selected.length + 1) + ' members', memberIds: ['you', ...selected.map((person) => person.id)], admins: ['you'], moderators: [], preview: 'Group created', time: 'Now', unread: 0, pinned: false, favorite: false, archived: false, muted: false, messages: [] }
-    setConversations((items) => [group, ...items])
-    setActiveId(id); setView('messages'); setMobileChatOpen(true)
-    setShowGroupCreator(false); setShowNewChat(false); setGroupName(''); setGroupMemberIds([])
-    showToast('Group created in this browser preview')
+    const selected = friendContacts.filter((person) => groupMemberIds.includes(person.id))
+    if (!uid || !db) { showToast('Sign in again before creating a group.'); return }
+    if (!title || title.length > 48) { showToast('Enter a group name up to 48 characters.'); return }
+    if (!selected.length) { showToast('Choose at least one accepted friend.'); return }
+    if (selected.length > 49) { showToast('A group can contain up to 50 members.'); return }
+    const restricted = selected.find((person) => person.privacy?.whoCanAddToGroups === 'nobody')
+    if (restricted) { showToast(restricted.name + ' does not accept group invitations.'); return }
+
+    const memberIds = [...new Set([uid, ...selected.map((person) => person.id)])]
+    const groupRef = doc(collection(db, 'conversations'))
+    const batch = writeBatch(db)
+    batch.set(groupRef, {
+      type: 'group',
+      title,
+      createdBy: uid,
+      memberIds,
+      adminIds: [uid],
+      moderatorIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    memberIds.forEach((memberUid) => {
+      batch.set(doc(db, 'conversations', groupRef.id, 'members', memberUid), {
+        uid: memberUid,
+        role: memberUid === uid ? 'admin' : 'member',
+        createdAt: serverTimestamp(),
+      })
+    })
+
+    try {
+      await batch.commit()
+      const group = {
+        id: groupRef.id,
+        firebaseConversationId: groupRef.id,
+        name: title,
+        initials: title.split(/\\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+        status: 'group',
+        members: memberIds.length + ' members',
+        memberIds,
+        adminIds: [uid],
+        admins: ['you'],
+        moderatorIds: [],
+        moderators: [],
+        preview: 'Group created',
+        time: 'Now',
+        unread: 0,
+        pinned: false,
+        favorite: false,
+        archived: false,
+        muted: false,
+        messages: [],
+      }
+      setConversations((items) => [group, ...items.filter((item) => item.id !== group.id)])
+      setActiveId(group.id)
+      setView('messages')
+      setMobileChatOpen(true)
+      setShowGroupCreator(false)
+      setShowNewChat(false)
+      setGroupName('')
+      setGroupMemberIds([])
+      showToast('Group created and synced with all members.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied'
+        ? 'Group creation was denied. Confirm every invitee is an accepted friend and deploy the latest Firestore rules.'
+        : error?.message || 'Could not create this group.')
+    }
+  }
+
+  const toggleGroupModerator = async (memberUid) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !activeConversation || !activeConversation.adminIds?.includes(uid) || !memberUid) return
+    const isModerator = (activeConversation.moderatorIds || []).includes(memberUid)
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        moderatorIds: isModerator ? arrayRemove(memberUid) : arrayUnion(memberUid),
+        updatedAt: serverTimestamp(),
+      })
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Only group admins can change moderator roles.' : error?.message || 'Could not update this role.')
+    }
+  }
+
+  const addGroupMember = async (memberUid) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    const person = friendContacts.find((entry) => entry.id === memberUid)
+    if (!uid || !db || !activeConversation || activeConversation.status !== 'group' || !activeConversation.adminIds?.includes(uid) || !person) {
+      showToast('Only an admin can add an accepted friend to this group.')
+      return
+    }
+    if (person.privacy?.whoCanAddToGroups === 'nobody') {
+      showToast(person.name + ' does not accept group invitations.')
+      return
+    }
+    if (activeConversation.memberIds.includes(memberUid)) return
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'conversations', conversationId), {
+      memberIds: arrayUnion(memberUid),
+      updatedAt: serverTimestamp(),
+    })
+    batch.set(doc(db, 'conversations', conversationId, 'members', memberUid), {
+      uid: memberUid,
+      role: 'member',
+      createdAt: serverTimestamp(),
+    })
+    try {
+      await batch.commit()
+      showToast(person.name + ' was added to the group.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Group membership change denied. Deploy the latest Firestore rules and confirm this person is your accepted friend.' : error?.message || 'Could not add this member.')
+    }
   }
 
   const createPoll = () => {
@@ -1458,17 +1562,28 @@ function App({ profile, isAdmin = false }) {
     showToast(activeConversation.favorite ? 'Removed from starred' : 'Added to starred')
   }
 
-  const toggleBlockContact = () => {
+  const toggleBlockContact = async () => {
     if (!activeConversation || activeConversation.status === 'group') return
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) { showToast('Sign in again before changing your block list.'); return }
+    const targetUid = activeConversation.id
+    const blockRef = doc(db, 'users', uid, 'blocks', targetUid)
     const nextBlocked = !activeConversation.blocked
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, blocked: nextBlocked } : item))
-    const handle = String(activeConversation.username || activeConversation.id || '').replace(/^@/, '').toLowerCase()
     try {
-      const saved = JSON.parse(localStorage.getItem('notification-blocked-users') || '[]')
-      const updated = nextBlocked ? [...new Set([...saved, handle])] : saved.filter((value) => value !== handle)
-      localStorage.setItem('notification-blocked-users', JSON.stringify(updated))
-    } catch { /* Keep the conversation-level block state available in this prototype. */ }
-    showToast(nextBlocked ? 'User blocked on this device' : 'User unblocked')
+      if (nextBlocked) {
+        await setDoc(blockRef, {
+          uid: targetUid,
+          username: activeConversation.username || targetUid,
+          createdAt: serverTimestamp(),
+        })
+      } else {
+        await deleteDoc(blockRef)
+      }
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, blocked: nextBlocked } : item))
+      showToast(nextBlocked ? 'User blocked on your account.' : 'User unblocked.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firebase denied this block change. Deploy the latest Firestore rules.' : error?.message || 'Could not update the block list.')
+    }
   }
 
   const archiveConversation = () => {
@@ -1478,18 +1593,42 @@ function App({ profile, isAdmin = false }) {
     showToast(activeConversation.archived ? 'Conversation restored' : 'Conversation archived')
   }
 
-  const leaveGroup = () => {
-    if (!activeConversation || activeConversation.status !== 'group') return
-    const groupName = activeConversation.name
-    const remaining = conversations.filter((item) => item.id !== activeId)
-    setConversations(remaining)
-    setActiveId(remaining.find((item) => !item.archived)?.id || remaining[0]?.id || '')
-    setShowChatMenu(false)
-    setShowDetails(false)
-    setMobileChatOpen(false)
-    setView('messages')
-    showToast(`You left ${groupName}`)
+  const leaveGroup = async () => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !activeConversation || activeConversation.status !== 'group' || !conversationId) return
+    const remainingIds = activeConversation.memberIds.filter((memberUid) => memberUid !== uid)
+    const wasAdmin = (activeConversation.adminIds || []).includes(uid)
+    const promotedUid = wasAdmin ? remainingIds[0] : ''
+    const batch = writeBatch(db)
+    batch.delete(doc(db, 'conversations', conversationId, 'members', uid))
+    batch.update(doc(db, 'conversations', conversationId), {
+      memberIds: arrayRemove(uid),
+      adminIds: wasAdmin ? (promotedUid ? [promotedUid, ...activeConversation.adminIds.filter((id) => id !== uid && id !== promotedUid)] : arrayRemove(uid)) : activeConversation.adminIds,
+      ...(wasAdmin && promotedUid ? { moderatorIds: arrayRemove(promotedUid) } : {}),
+      updatedAt: serverTimestamp(),
+    })
+    if (promotedUid) {
+      batch.set(doc(db, 'conversations', conversationId, 'members', promotedUid), {
+        uid: promotedUid,
+        role: 'admin',
+        createdAt: serverTimestamp(),
+      }, { merge: true })
+    }
+    try {
+      await batch.commit()
+      setConversations((items) => items.filter((item) => item.id !== conversationId))
+      setActiveId('')
+      setShowChatMenu(false)
+      setShowDetails(false)
+      setMobileChatOpen(false)
+      setView('messages')
+      showToast('You left ' + activeConversation.name + '.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Could not leave this group. Deploy the latest Firestore rules.' : error?.message || 'Could not leave this group.')
+    }
   }
+
 
   const sendFriendRequest = async (person) => {
     const uid = auth?.currentUser?.uid
