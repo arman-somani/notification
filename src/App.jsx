@@ -1476,21 +1476,21 @@ function App({ profile, isAdmin = false }) {
     const restricted = selected.find((person) => person.privacy?.whoCanAddToGroups === 'nobody')
     if (restricted) { showToast(restricted.name + ' does not accept group invitations.'); return }
 
-    const memberIds = [...new Set([uid, ...selected.map((person) => person.id)])]
+    const initialMemberIds = [uid, selected[0].id]
     const groupRef = doc(collection(db, 'conversations'))
-    const batch = writeBatch(db)
-    batch.set(groupRef, {
+    const initialBatch = writeBatch(db)
+    initialBatch.set(groupRef, {
       type: 'group',
       title,
       createdBy: uid,
-      memberIds,
+      memberIds: initialMemberIds,
       adminIds: [uid],
       moderatorIds: [],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
-    memberIds.forEach((memberUid) => {
-      batch.set(doc(db, 'conversations', groupRef.id, 'members', memberUid), {
+    initialMemberIds.forEach((memberUid) => {
+      initialBatch.set(doc(db, 'conversations', groupRef.id, 'members', memberUid), {
         uid: memberUid,
         role: memberUid === uid ? 'admin' : 'member',
         createdAt: serverTimestamp(),
@@ -1498,42 +1498,65 @@ function App({ profile, isAdmin = false }) {
     })
 
     try {
-      await batch.commit()
-      const group = {
-        id: groupRef.id,
-        firebaseConversationId: groupRef.id,
-        name: title,
-        initials: title.split(/\\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
-        status: 'group',
-        members: memberIds.length + ' members',
-        memberIds,
-        adminIds: [uid],
-        admins: ['you'],
-        moderatorIds: [],
-        moderators: [],
-        preview: 'Group created',
-        time: 'Now',
-        unread: 0,
-        pinned: false,
-        favorite: false,
-        archived: false,
-        muted: false,
-        messages: [],
-      }
-      setConversations((items) => [group, ...items.filter((item) => item.id !== group.id)])
-      setActiveId(group.id)
-      setView('messages')
-      setMobileChatOpen(true)
-      setShowGroupCreator(false)
-      setShowNewChat(false)
-      setGroupName('')
-      setGroupMemberIds([])
-      showToast('Group created and synced with all members.')
+      await initialBatch.commit()
     } catch (error) {
       showToast(error?.code === 'permission-denied'
-        ? 'Group creation was denied. Confirm every invitee is an accepted friend and deploy the latest Firestore rules.'
+        ? 'Group creation was denied. Confirm the first invitee is an accepted friend and deploy the latest Firestore rules.'
         : error?.message || 'Could not create this group.')
+      return
     }
+
+    const group = {
+      id: groupRef.id,
+      firebaseConversationId: groupRef.id,
+      name: title,
+      initials: title.split(/\\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+      status: 'group',
+      members: '2 members',
+      memberIds: initialMemberIds,
+      adminIds: [uid],
+      admins: ['you'],
+      moderatorIds: [],
+      moderators: [],
+      preview: 'Group created',
+      time: 'Now',
+      unread: 0,
+      pinned: false,
+      favorite: false,
+      archived: false,
+      muted: false,
+      messages: [],
+    }
+    setConversations((items) => [group, ...items.filter((item) => item.id !== group.id)])
+    setActiveId(group.id)
+    setView('messages')
+    setMobileChatOpen(true)
+    setShowGroupCreator(false)
+    setShowNewChat(false)
+    setGroupName('')
+    setGroupMemberIds([])
+
+    let addedCount = 2
+    for (const person of selected.slice(1)) {
+      const memberBatch = writeBatch(db)
+      memberBatch.update(groupRef, {
+        memberIds: arrayUnion(person.id),
+        updatedAt: serverTimestamp(),
+      })
+      memberBatch.set(doc(db, 'conversations', groupRef.id, 'members', person.id), {
+        uid: person.id,
+        role: 'member',
+        createdAt: serverTimestamp(),
+      })
+      try {
+        await memberBatch.commit()
+        addedCount += 1
+      } catch (error) {
+        showToast('Group created with ' + addedCount + ' members. Could not add ' + person.name + ': ' + (error?.message || 'permission denied.'))
+        return
+      }
+    }
+    showToast('Group created and synced with all ' + addedCount + ' members.')
   }
 
   const toggleGroupModerator = async (memberUid) => {
@@ -1601,16 +1624,10 @@ function App({ profile, isAdmin = false }) {
   const markAllRead = async () => {
     const uid = auth?.currentUser?.uid
     if (!uid || !db) return
+    let marked = 0
     try {
-      let batch = writeBatch(db)
-      let pendingWrites = 0
-      let marked = 0
-      const commitIfFull = async () => {
-        if (pendingWrites < 450) return
-        await batch.commit()
-        batch = writeBatch(db)
-        pendingWrites = 0
-      }
+      // Keep each batch scoped to one conversation so Firestore rule lookups
+      // for that parent are reused and stay within the access-call limit.
       for (const conversation of conversations) {
         if (!conversation.unread) continue
         const conversationId = conversation.status === 'group'
@@ -1621,18 +1638,25 @@ function App({ profile, isAdmin = false }) {
           orderBy('createdAt', 'desc'),
           limit(100),
         ))
+        const batch = writeBatch(db)
+        let pendingWrites = 0
         for (const messageDocument of snapshot.docs) {
           const data = messageDocument.data()
-          if (data.senderId === uid || data.deletedAt || (Array.isArray(data.readBy) && data.readBy.includes(uid))) continue
+          const expiryMillis = timestampToMillis(data.expiresAt)
+          if (data.senderId === uid || data.deletedAt || (expiryMillis && expiryMillis <= Date.now()) || (Array.isArray(data.readBy) && data.readBy.includes(uid))) continue
           const patch = { readBy: arrayUnion(uid) }
-          if (!data.readAt) patch.readAt = serverTimestamp()
+          if (!data.readAt) {
+            patch.readAt = serverTimestamp()
+            patch.expiresAt = Timestamp.fromMillis(Date.now() + MESSAGE_RETENTION_MS)
+          } else if (!data.expiresAt) {
+            patch.expiresAt = Timestamp.fromMillis((timestampToMillis(data.readAt) || Date.now()) + MESSAGE_RETENTION_MS)
+          }
           batch.update(messageDocument.ref, patch)
           pendingWrites += 1
           marked += 1
-          await commitIfFull()
         }
+        if (pendingWrites) await batch.commit()
       }
-      if (pendingWrites) await batch.commit()
       setConversations((items) => items.map((item) => ({ ...item, unread: 0 })))
       showToast(marked ? 'Marked ' + marked + ' messages as read.' : 'All messages are already read.')
     } catch (error) {
