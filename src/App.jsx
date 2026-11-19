@@ -1138,7 +1138,7 @@ function App({ profile, isAdmin = false }) {
     if (!file || !activeConversation) return
     input.value = ''
 
-    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+    if (!/^image\\/(jpeg|png|webp|gif)$/i.test(file.type)) {
       showToast('Choose a JPG, PNG, WEBP or GIF image.')
       return
     }
@@ -1149,42 +1149,42 @@ function App({ profile, isAdmin = false }) {
 
     const uid = auth?.currentUser?.uid
     const apiUrl = getMediaApiUrl()
-    if (!uid) {
+    const isGroup = activeConversation.status === 'group'
+    const isAcceptedFriend = friendContacts.some((person) => person.id === activeId)
+    if (!uid || !db) {
       showToast('Sign in again before sharing an image.')
       return
     }
-    if (!db) {
-      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
-      return
-    }
-    if (!friendContacts.some((person) => person.id === activeId)) {
-      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
-      return
-    }
-    if (!apiUrl) {
-      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
+    if (!isGroup && !isAcceptedFriend) {
+      showToast('Only accepted friends and current group members can share images.')
       return
     }
 
-    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+    const conversationId = getActiveConversationId(uid)
     const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
 
     try {
-      // Repair older conversations before requesting the Worker upload.
-      await runTransaction(db, async (transaction) => {
-        const conversationRef = doc(db, 'conversations', conversationId)
-        const snapshot = await transaction.get(conversationRef)
-        if (!snapshot.exists()) {
-          transaction.set(conversationRef, {
-            createdBy: uid,
-            memberIds: [uid, activeId].sort(),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
-          throw new Error('This conversation does not have the expected members.')
+      if (isGroup) {
+        const groupSnapshot = await getDoc(doc(db, 'conversations', conversationId))
+        if (!groupSnapshot.exists() || groupSnapshot.data()?.type !== 'group' || !groupSnapshot.data()?.memberIds?.includes(uid)) {
+          throw new Error('You are no longer a member of this group.')
         }
-      })
+      } else {
+        await runTransaction(db, async (transaction) => {
+          const conversationRef = doc(db, 'conversations', conversationId)
+          const snapshot = await transaction.get(conversationRef)
+          if (!snapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, activeId].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+            throw new Error('This conversation does not have the expected members.')
+          }
+        })
+      }
 
       const idToken = await getIdToken(auth.currentUser)
       const uploadForm = new FormData()
@@ -1207,6 +1207,8 @@ function App({ profile, isAdmin = false }) {
         type: 'image',
         attachmentPath: uploadResult.filePath,
         viewOnce: true,
+        readBy: [uid],
+        reactions: {},
         createdAt: serverTimestamp(),
         ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
       })
@@ -1221,8 +1223,7 @@ function App({ profile, isAdmin = false }) {
         }
         : item))
       setReplyTarget(null)
-      // The inbox listener reads the newest message directly, including photos.
-      showToast('Photo sent.')
+      showToast('View-once photo sent.')
     } catch (error) {
       showToast(error?.message || 'Could not send the image. Please try again.')
     }
@@ -1604,8 +1605,8 @@ function App({ profile, isAdmin = false }) {
     batch.delete(doc(db, 'conversations', conversationId, 'members', uid))
     batch.update(doc(db, 'conversations', conversationId), {
       memberIds: arrayRemove(uid),
-      adminIds: wasAdmin ? (promotedUid ? [promotedUid, ...activeConversation.adminIds.filter((id) => id !== uid && id !== promotedUid)] : arrayRemove(uid)) : activeConversation.adminIds,
-      ...(wasAdmin && promotedUid ? { moderatorIds: arrayRemove(promotedUid) } : {}),
+      adminIds: wasAdmin ? [ ...(activeConversation.adminIds || []).filter((id) => id !== uid && id !== promotedUid), ...(promotedUid ? [promotedUid] : []) ] : activeConversation.adminIds,
+      moderatorIds: arrayRemove(uid),
       updatedAt: serverTimestamp(),
     })
     if (promotedUid) {
