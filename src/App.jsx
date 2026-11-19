@@ -741,24 +741,31 @@ function App({ profile, isAdmin = false }) {
     return unsubscribe
   }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
 
-  // A per-conversation RTDB subscription powers live typing indicators on every client.
+  // Firestore typing records inherit conversation membership rules, including for groups.
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     const isGroup = activeConversationRecord?.status === 'group'
     const friend = friendContacts.find((person) => person.id === activeId)
-    if (!uid || !realtimeDb || (!isGroup && !friend)) {
+    if (!uid || !db || (!isGroup && !friend)) {
       setTypingUsers([])
       return undefined
     }
     const conversationId = isGroup
       ? (activeConversationRecord.firebaseConversationId || activeId)
       : directConversationId(uid, friend.id)
-    const unsubscribe = onValue(ref(realtimeDb, 'typing/' + conversationId), (snapshot) => {
+    const typingQuery = query(collection(db, 'conversations', conversationId, 'typing'), where('isTyping', '==', true))
+    const unsubscribe = onSnapshot(typingQuery, (snapshot) => {
       const now = Date.now()
-      const users = Object.entries(snapshot.val() || {})
-        .filter(([memberUid, value]) => memberUid !== uid && value?.isTyping === true && now - Number(value.updatedAt || 0) < 12000)
-        .map(([memberUid, value]) => ({ uid: memberUid, updatedAt: Number(value.updatedAt || now) }))
+      const users = snapshot.docs
+        .map((typingDocument) => {
+          const data = typingDocument.data()
+          return { uid: typingDocument.id, updatedAt: timestampToMillis(data.updatedAt) || now }
+        })
+        .filter((user) => user.uid !== uid && now - user.updatedAt < 12000)
       setTypingUsers(users)
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.warn('[Converly] Typing status could not be read:', error)
+      setTypingUsers([])
     })
     const staleTimer = window.setInterval(() => {
       setTypingUsers((users) => users.filter((user) => Date.now() - user.updatedAt < 12000))
@@ -1012,11 +1019,12 @@ function App({ profile, isAdmin = false }) {
   const publishTyping = (isTyping) => {
     const uid = auth?.currentUser?.uid
     const conversationId = getActiveConversationId(uid)
-    if (!uid || !realtimeDb || !conversationId) return
-    setRealtimeValue(ref(realtimeDb, 'typing/' + conversationId + '/' + uid), {
+    if (!uid || !db || !conversationId) return
+    setDoc(doc(db, 'conversations', conversationId, 'typing', uid), {
+      uid,
       isTyping: Boolean(isTyping),
-      updatedAt: Date.now(),
-    }).catch((error) => console.warn('[Converly] Could not update typing state:', error))
+      updatedAt: serverTimestamp(),
+    }, { merge: true }).catch((error) => console.warn('[Converly] Could not update typing state:', error))
   }
 
   const handleSend = async (event) => {
