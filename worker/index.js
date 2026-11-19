@@ -325,22 +325,17 @@ async function handleOpen(request, env) {
     return errorResponse(request, env, "This image has expired.", 410, "image_expired");
   }
 
-  const isSender = senderId === uid;
-  if (!isSender) {
-    const viewPath = "conversations/" + encodeURIComponent(conversationId) +
-      "/messages/" + encodeURIComponent(messageId) + "/views/" + encodeURIComponent(uid);
-    const priorView = await firestoreGetIfExists(viewPath, idToken, env);
-    if (priorView) {
-      return errorResponse(request, env, "This image has already been opened on this account.", 410, "image_already_opened");
-    }
+  const viewPath = "conversations/" + encodeURIComponent(conversationId) +
+    "/messages/" + encodeURIComponent(messageId) + "/views/" + encodeURIComponent(uid);
+  const priorView = await firestoreGetIfExists(viewPath, idToken, env);
+  if (priorView) {
+    return errorResponse(request, env, "This image has already been opened on this account.", 410, "image_already_opened");
   }
 
-  // Each recipient has an independent one-view marker. The conditional create
-  // and message-viewer transform commit atomically to prevent duplicate opens.
+  // Every member, including the sender, gets one account-level view. The
+  // conditional create and viewer-list transform prevent duplicate opens.
   const imageResponse = await getPrivateImage(filePath, env);
-  if (!isSender) {
-    await markRecipientView(conversationId, messageId, uid, idToken, env);
-  }
+  await markRecipientView(conversationId, messageId, uid, idToken, env);
 
   const headers = {
     ...corsHeaders(request, env),
