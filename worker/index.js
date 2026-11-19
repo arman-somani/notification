@@ -248,6 +248,7 @@ async function markRecipientView(conversationId, messageId, uid, idToken, env) {
               appendMissingElements: { values: [{ stringValue: uid }] },
             }],
           },
+          currentDocument: { exists: true },
         },
       ],
     }),
