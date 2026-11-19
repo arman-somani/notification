@@ -35,10 +35,10 @@ Use the same Cloudflare account and Worker name that owns `notification-api.medi
 
 - `GET /health`: health check.
 - `POST /media/upload`: Firebase bearer token + multipart `conversationId`, `messageId`, and `file`. Checks Firestore membership and uploads a private ImageKit asset.
-- `POST /media/open`: Firebase bearer token + JSON `conversationId` and `messageId`. The sender can preview their image without consuming the recipient's open. The first authorized recipient open is recorded with a Firestore update-time precondition, and the Worker streams private image bytes without returning a reusable ImageKit URL.
+- `POST /media/open`: Firebase bearer token + JSON `conversationId` and `messageId`. The sender can preview their image without consuming the recipient's open. Each recipient has an independent Firestore view marker, created atomically with a per-message viewer list; the Worker streams private image bytes without returning a reusable ImageKit URL. The sender's own account is also limited to one view.
 
 The Worker uses the Firestore REST API with the user's Firebase ID token, so Firestore Security Rules continue to apply.
 
 ## Production CORS
 
-Add your production web app's exact origin to `ALLOWED_ORIGINS` in `wrangler.toml` before deploying. The default list includes localhost and the Firebase Hosting origins for this project.
+The production origin `https://converly.vercel.app` is included in `ALLOWED_ORIGINS`. Add any other custom production or preview origin explicitly before deploying. The default list includes localhost and the Firebase Hosting origins for this project.

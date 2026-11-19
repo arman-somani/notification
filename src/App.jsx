@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getIdToken, signOut } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { auth, db } from './firebase/client'
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { onDisconnect, onValue, push, ref, serverTimestamp as realtimeServerTimestamp, set as setRealtimeValue } from 'firebase/database'
+import { auth, db, realtimeDb } from './firebase/client'
+import { countUnreadMessages, mapGroupConversation, normalizeMessage, timestampToMillis } from './firebase/chatModel.js'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
@@ -278,6 +280,9 @@ function App({ profile, isAdmin = false }) {
   const [newChatSearch, setNewChatSearch] = useState('')
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
+  const [typingUsers, setTypingUsers] = useState([])
+  const [composerFocused, setComposerFocused] = useState(false)
+  const typingPublishedRef = useRef(false)
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
   const [friendRequestError, setFriendRequestError] = useState('')
   const [showFriendRequests, setShowFriendRequests] = useState(false)
@@ -428,7 +433,7 @@ function App({ profile, isAdmin = false }) {
           const profileSnapshot = await getDoc(doc(db, 'users', contactUid))
           if (!profileSnapshot.exists()) return null
           const data = profileSnapshot.data()
-          return { id: contactUid, name: normalizeDisplayName(data.displayName || data.username), username: data.username, avatarId: data.avatarId, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
+          return { id: contactUid, name: normalizeDisplayName(data.displayName || data.username), username: data.username, avatarId: data.avatarId, privacy: data.privacy || {}, initials: (data.displayName || data.username || '?').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }
         }))
         let matches = []
         if (showNewChat && usernameTerm.length >= 3) {
@@ -482,6 +487,137 @@ function App({ profile, isAdmin = false }) {
   }, [showNewChat, showFriendRequests, newChatSearch, auth?.currentUser?.uid])
 
 
+
+  // Keep group conversations backed by Firestore membership, not browser-only state.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return undefined
+    const groupsQuery = query(collection(db, 'conversations'), where('memberIds', 'array-contains', uid))
+    return onSnapshot(groupsQuery, (snapshot) => {
+      const groups = snapshot.docs
+        .map((item) => ({ id: item.id, data: item.data() }))
+        .filter((item) => item.data.type === 'group')
+        .map((item) => mapGroupConversation(item.id, item.data, uid))
+      setConversations((current) => {
+        const previousGroups = new Map(current.filter((item) => item.status === 'group').map((item) => [item.id, item]))
+        const nextGroups = groups.map((group) => ({
+          ...previousGroups.get(group.id),
+          ...group,
+          messages: previousGroups.get(group.id)?.messages || [],
+          unread: previousGroups.get(group.id)?.unread || 0,
+          favorite: previousGroups.get(group.id)?.favorite || false,
+          archived: previousGroups.get(group.id)?.archived || false,
+          muted: previousGroups.get(group.id)?.muted || false,
+          pinned: previousGroups.get(group.id)?.pinned || false,
+        }))
+        return [...current.filter((item) => item.status !== 'group'), ...nextGroups]
+      })
+    }, (error) => {
+      showToast(error?.code === 'permission-denied'
+        ? 'Group access was denied. Deploy the updated Firestore rules.'
+        : error?.message || 'Could not sync your groups.')
+    })
+  }, [auth?.currentUser?.uid])
+
+  // Publish one connection record per browser tab; Firebase removes stale records on disconnect.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb) return undefined
+    let active = true
+    let connectionRef = null
+    const connectedRef = ref(realtimeDb, '.info/connected')
+    const unsubscribe = onValue(connectedRef, (snapshot) => {
+      if (!active || snapshot.val() !== true) return
+      connectionRef = push(ref(realtimeDb, 'presence/' + uid))
+      const offlineValue = { state: 'offline', lastChanged: realtimeServerTimestamp() }
+      onDisconnect(connectionRef).set(offlineValue).then(() => {
+        if (active) return setRealtimeValue(connectionRef, { state: 'online', lastChanged: realtimeServerTimestamp() })
+        return undefined
+      }).catch((error) => console.warn('[Converly] Could not publish presence:', error))
+    })
+    return () => {
+      active = false
+      unsubscribe()
+      if (connectionRef) {
+        onDisconnect(connectionRef).cancel().catch(() => {})
+        setRealtimeValue(connectionRef, { state: 'offline', lastChanged: realtimeServerTimestamp() }).catch(() => {})
+      }
+    }
+  }, [auth?.currentUser?.uid])
+
+  // Friends can see presence only when the profile privacy setting permits it.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb || friendContacts.length === 0) return undefined
+    const friends = friendContacts
+    const unsubscribers = friends.map((person) => onValue(ref(realtimeDb, 'presence/' + person.id), (snapshot) => {
+      const presence = snapshot.val() || {}
+      const isOnline = Object.values(presence).some((entry) => entry?.state === 'online')
+      const canSeePresence = person.privacy?.whoCanSeeLastSeen !== 'nobody'
+      const status = canSeePresence && isOnline ? 'online' : 'offline'
+      setFriendContacts((items) => items.map((item) => item.id === person.id ? { ...item, status } : item))
+      setConversations((items) => items.map((item) => item.id === person.id ? { ...item, status } : item))
+    }))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
+  // Listen to each account's own block documents so the menu reflects persisted state.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || friendContacts.length === 0) return undefined
+    const unsubscribers = friendContacts.map((person) => onSnapshot(
+      doc(db, 'users', uid, 'blocks', person.id),
+      (snapshot) => setConversations((items) => items.map((item) => item.id === person.id
+        ? { ...item, blocked: snapshot.exists() }
+        : item)),
+      (error) => console.warn('[Converly] Block status could not be synced:', error),
+    ))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
+  // Each account mirrors only its own accepted friendships; RTDB requires both sides.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !realtimeDb || friendContacts.length === 0) return undefined
+    friendContacts.forEach((person) => {
+      setRealtimeValue(ref(realtimeDb, 'friendships/' + uid + '/' + person.id), true)
+        .catch((error) => console.warn('[Converly] Could not publish friend presence access:', error))
+    })
+    return undefined
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
+  // Keep group previews and unread counts synchronized even when a group is not open.
+  const groupConversationIds = conversations.filter((item) => item.status === 'group').map((item) => item.firebaseConversationId || item.id).join('|')
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || !groupConversationIds) return undefined
+    const ids = groupConversationIds.split('|').filter(Boolean)
+    const unsubscribers = ids.map((conversationId) => onSnapshot(
+      query(collection(db, 'conversations', conversationId, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
+      (snapshot) => {
+        const latestDocument = snapshot.docs.find((messageDocument) => {
+          const expiry = messageDocument.data().expiresAt
+          return !expiry || expiry.toMillis() > Date.now()
+        })
+        const latest = latestDocument?.data()
+        const unread = activeId === conversationId ? 0 : countUnreadMessages(snapshot.docs, uid)
+        const preview = latest
+          ? latest.deletedAt ? 'Message deleted' : latest.type === 'image' ? 'Photo' : latest.text || 'Message'
+          : 'Group created'
+        const latestAt = latest?.createdAt?.toDate ? latest.createdAt.toDate().getTime() : 0
+        setConversations((items) => items.map((item) => item.id === conversationId ? {
+          ...item,
+          unread,
+          preview,
+          time: latestAt ? new Date(latestAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
+          lastActivityAt: latestAt || item.lastActivityAt || 0,
+        } : item))
+      },
+      (error) => showToast(error?.message || 'Could not sync group activity.'),
+    ))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [groupConversationIds, activeId, auth?.currentUser?.uid])
+
   useEffect(() => {
     localStorage.setItem('notification-sound-enabled', String(soundEnabled))
   }, [soundEnabled])
@@ -532,9 +668,13 @@ function App({ profile, isAdmin = false }) {
     : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
+    const isGroup = activeConversationRecord?.status === 'group'
     const friend = friendContacts.find((person) => person.id === activeId)
-    if (!uid || !db || !friend) return undefined
-    const conversationId = directConversationId(uid, friend.id)
+    if (!uid || !db || (!friend && !isGroup)) return undefined
+
+    const conversationId = isGroup
+      ? (activeConversationRecord.firebaseConversationId || activeId)
+      : directConversationId(uid, friend.id)
     const messagesQuery = query(
       collection(db, 'conversations', conversationId, 'messages'),
       orderBy('createdAt', 'asc'),
@@ -543,44 +683,101 @@ function App({ profile, isAdmin = false }) {
     let snapshotGeneration = 0
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const generation = ++snapshotGeneration
-      const messages = snapshot.docs.map((messageDoc) => {
-        const data = messageDoc.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-        return {
-          id: messageDoc.id,
-          from: data.senderId === uid ? 'me' : 'them',
-          senderId: data.senderId,
-          type: data.type || 'text',
-          text: data.text || '',
-          attachmentPath: data.attachmentPath || '',
-          viewOnce: data.viewOnce === true,
-          viewed: data.senderId !== uid && Boolean(data.viewedByUid),
-          replyToId: data.replyToId,
-          replyToText: data.replyToText,
-          editedAt: data.editedAt ? (data.editedAt.toDate ? data.editedAt.toDate().getTime() : data.editedAt) : null,
-          time: createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-          status: data.senderId === uid ? 'sent' : 'received',
-        }
-      })
+      const documents = snapshot.docs
+      const messages = documents
+        .map((messageDoc) => normalizeMessage(messageDoc.id, messageDoc.data(), uid))
+        .filter((message) => !message.expiresAt || message.expiresAt > Date.now())
       if (generation !== snapshotGeneration) return
+
+      // Read state is stored per recipient and shared with every device.
+      const unreadIncoming = documents.filter((messageDoc) => {
+        const data = messageDoc.data()
+        const expiryMillis = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : 0
+        return data.senderId !== uid
+          && !data.deletedAt
+          && (!expiryMillis || expiryMillis > Date.now())
+          && !(Array.isArray(data.readBy) && data.readBy.includes(uid))
+      })
+      if (unreadIncoming.length) {
+        const batch = writeBatch(db)
+        unreadIncoming.forEach((messageDoc) => {
+          const data = messageDoc.data()
+          const patch = { readBy: arrayUnion(uid) }
+          if (!data.readAt) {
+            patch.readAt = serverTimestamp()
+            patch.expiresAt = Timestamp.fromMillis(Date.now() + MESSAGE_RETENTION_MS)
+          } else if (!data.expiresAt) {
+            const readAtMillis = timestampToMillis(data.readAt)
+            patch.expiresAt = Timestamp.fromMillis((readAtMillis || Date.now()) + MESSAGE_RETENTION_MS)
+          }
+          batch.update(messageDoc.ref, patch)
+        })
+        batch.commit().catch((error) => showToast(error?.code === 'permission-denied'
+          ? 'Read receipts were denied. Deploy the updated Firestore rules.'
+          : error?.message || 'Could not update read receipts.'))
+      }
+
       const latestMessage = messages[messages.length - 1]
       const preview = latestMessage
-        ? latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
-        : 'Start a conversation'
+        ? latestMessage.deleted ? 'Message deleted' : latestMessage.type === 'image' ? 'Photo' : latestMessage.text || 'Message'
+        : (isGroup ? 'Group created' : 'Start a conversation')
+      const unread = isGroup ? 0 : 0
       setConversations((items) => {
         const exists = items.some((item) => item.id === activeId)
-        if (!exists) return items
-        return items.map((item) => item.id === activeId
-          ? { ...item, firebaseConversationId: conversationId, messages, preview, time: latestMessage?.time || item.time }
-          : item)
+        if (!exists && !isGroup) return items
+        const targetId = isGroup ? conversationId : activeId
+        const currentGroup = items.find((item) => item.id === targetId)
+        const nextItem = currentGroup || (isGroup ? mapGroupConversation(conversationId, activeConversationRecord, uid) : null)
+        return isGroup && !currentGroup
+          ? [...items, { ...nextItem, firebaseConversationId: conversationId, messages, preview, unread, time: latestMessage?.time || '' }]
+          : items.map((item) => (item.id === targetId
+            ? { ...item, firebaseConversationId: conversationId, messages, preview, unread, time: latestMessage?.time || item.time, lastActivityAt: latestMessage?.createdAt || item.lastActivityAt || 0 }
+            : item))
       })
     }, (error) => {
       setToast(error?.code === 'permission-denied'
         ? 'Message sync permission denied. Deploy the latest Firestore rules.'
         : error?.message || 'Could not sync messages.')
     })
+
     return unsubscribe
-  }, [activeId, friendContacts, auth?.currentUser?.uid])
+  }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
+
+  // Firestore typing records inherit conversation membership rules, including for groups.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    const isGroup = activeConversationRecord?.status === 'group'
+    const friend = friendContacts.find((person) => person.id === activeId)
+    if (!uid || !db || (!isGroup && !friend)) {
+      setTypingUsers([])
+      return undefined
+    }
+    const conversationId = isGroup
+      ? (activeConversationRecord.firebaseConversationId || activeId)
+      : directConversationId(uid, friend.id)
+    const typingQuery = query(collection(db, 'conversations', conversationId, 'typing'), where('isTyping', '==', true))
+    const unsubscribe = onSnapshot(typingQuery, (snapshot) => {
+      const now = Date.now()
+      const users = snapshot.docs
+        .map((typingDocument) => {
+          const data = typingDocument.data()
+          return { uid: typingDocument.id, updatedAt: timestampToMillis(data.updatedAt) || now }
+        })
+        .filter((user) => user.uid !== uid && now - user.updatedAt < 12000)
+      setTypingUsers(users)
+    }, (error) => {
+      if (error?.code !== 'permission-denied') console.warn('[Converly] Typing status could not be read:', error)
+      setTypingUsers([])
+    })
+    const staleTimer = window.setInterval(() => {
+      setTypingUsers((users) => users.filter((user) => Date.now() - user.updatedAt < 12000))
+    }, 4000)
+    return () => {
+      unsubscribe()
+      window.clearInterval(staleTimer)
+    }
+  }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
+
   useEffect(() => {
     const uid = auth?.currentUser?.uid
     if (!uid || !db || friendContacts.length === 0) return undefined
@@ -590,25 +787,20 @@ function App({ profile, isAdmin = false }) {
       const latestMessageQuery = query(
         collection(db, 'conversations', conversationId, 'messages'),
         orderBy('createdAt', 'desc'),
-        limit(1),
+        limit(100),
       )
 
       return onSnapshot(latestMessageQuery, (snapshot) => {
-        const latest = snapshot.docs[0]
-        if (!latest) {
-          setConversations((items) => items.map((item) => item.id === person.id
-            ? { ...item, firebaseConversationId: conversationId }
-            : item))
-          return
-        }
-
-        const data = latest.data()
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : null
-        const preview = data.type === 'image'
-          ? 'Photo'
-          : data.type === 'voice'
-            ? 'Voice message'
-            : data.text || 'Message'
+        const latestDocument = snapshot.docs.find((messageDocument) => {
+          const expiry = messageDocument.data().expiresAt
+          return !expiry || expiry.toMillis() > Date.now()
+        })
+        const latest = latestDocument?.data()
+        const createdAt = latest?.createdAt?.toDate ? latest.createdAt.toDate() : null
+        const preview = latest
+          ? latest.deletedAt ? 'Message deleted' : latest.type === 'image' ? 'Photo' : latest.type === 'voice' ? 'Voice message' : latest.text || 'Message'
+          : 'Start a conversation'
+        const unread = activeId === person.id ? 0 : countUnreadMessages(snapshot.docs, uid)
 
         setConversations((items) => items.map((item) => item.id === person.id ? {
           ...item,
@@ -616,9 +808,7 @@ function App({ profile, isAdmin = false }) {
           preview,
           time: createdAt ? createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : item.time,
           lastActivityAt: createdAt ? createdAt.getTime() : item.lastActivityAt || 0,
-          unread: activeId === person.id || data.senderId === uid
-            ? 0
-            : Math.max(1, item.unread || 0),
+          unread,
         } : item))
       }, (error) => {
         if (error?.code === 'permission-denied') {
@@ -631,6 +821,7 @@ function App({ profile, isAdmin = false }) {
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [friendContacts, activeId, auth?.currentUser?.uid])
+
 
   const directory = useMemo(() => [
     ...conversations.filter((item) => !item.archived && item.status !== 'group'),
@@ -820,40 +1011,102 @@ function App({ profile, isAdmin = false }) {
     })
   }
 
+  const getActiveConversationId = (uid = auth?.currentUser?.uid) => {
+    if (!uid || !activeConversation) return ''
+    return activeConversation.status === 'group'
+      ? (activeConversation.firebaseConversationId || activeId)
+      : (activeConversation.firebaseConversationId || directConversationId(uid, activeId))
+  }
+
+  const publishTyping = (isTyping, force = false) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    const nextState = Boolean(isTyping)
+    if (!uid || !db || !conversationId) return
+    if (!force && typingPublishedRef.current === nextState) return
+    typingPublishedRef.current = nextState
+    setDoc(doc(db, 'conversations', conversationId, 'typing', uid), {
+      uid,
+      isTyping: nextState,
+      updatedAt: serverTimestamp(),
+    }, { merge: true }).catch((error) => console.warn('[Converly] Could not update typing state:', error))
+  }
+
+  useEffect(() => {
+    const isTyping = Boolean(messageText.trim()) && composerFocused
+    if (!isTyping) {
+      publishTyping(false)
+      return undefined
+    }
+    publishTyping(true, true)
+    const heartbeat = window.setInterval(() => publishTyping(true, true), 5000)
+    return () => {
+      window.clearInterval(heartbeat)
+      publishTyping(false)
+    }
+  }, [Boolean(messageText.trim()), composerFocused, activeId])
+
   const handleSend = async (event) => {
     event?.preventDefault()
     const text = messageText.trim()
     if (!text || !activeConversation) return
-    if (activeConversation.blocked) { showToast('Unblock this user before sending messages.'); return }
-    const currentUid = auth?.currentUser?.uid
-    if (currentUid && db && friendContacts.some((person) => person.id === activeId)) {
+    const uid = auth?.currentUser?.uid
+    const isGroup = activeConversation.status === 'group'
+    const isAcceptedFriend = friendContacts.some((person) => person.id === activeId)
+    if (!uid || !db || (!isGroup && !isAcceptedFriend)) {
+      showToast('This conversation is not connected to your Firebase account.')
+      return
+    }
+    if (activeConversation.blocked) {
+      showToast('Unblock this user before sending messages.')
+      return
+    }
+
+    if (!isGroup) {
       try {
-        const [myBlock, theirBlock] = await Promise.all([
-          getDoc(doc(db, 'users', currentUid, 'blocks', activeId)),
-          getDoc(doc(db, 'users', activeId, 'blocks', currentUid)),
+        const [myBlock, theirBlock, recipientSnapshot] = await Promise.all([
+          getDoc(doc(db, 'users', uid, 'blocks', activeId)),
+          getDoc(doc(db, 'users', activeId, 'blocks', uid)),
+          getDoc(doc(db, 'users', activeId)),
         ])
         if (myBlock.exists()) { showToast('You blocked this user. Unblock them before sending messages.'); return }
         if (theirBlock.exists()) { showToast('You cannot send messages because this user has blocked you.'); return }
+        const messagePrivacy = recipientSnapshot.data()?.privacy?.whoCanMessage
+        if (messagePrivacy === 'nobody') { showToast('This person is not accepting messages right now.'); return }
       } catch (error) {
-        showToast(error?.code === 'permission-denied' ? 'Could not verify this chat’s block status. Please try again.' : error?.message || 'Could not verify this chat. Please try again.')
+        showToast(error?.code === 'permission-denied' ? 'Could not verify this chat’s block or privacy status. Please try again.' : error?.message || 'Could not verify this chat. Please try again.')
         return
       }
     }
+
+    const conversationId = getActiveConversationId(uid)
+    if (!conversationId) { showToast('This conversation is not available.'); return }
+
     if (editingMessageId) {
-      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.map((message) => message.id === editingMessageId ? { ...message, text, editedAt: Date.now() } : message) } : item))
-      setEditingMessageId(null); setMessageText(''); messageInputRef.current?.focus(); return
+      try {
+        await updateDoc(doc(db, 'conversations', conversationId, 'messages', editingMessageId), {
+          text,
+          editedAt: serverTimestamp(),
+        })
+        setEditingMessageId(null)
+        setMessageText('')
+        publishTyping(false)
+        messageInputRef.current?.focus()
+      } catch (error) {
+        showToast(error?.code === 'permission-denied' ? 'Only the message author can edit this message. Deploy the latest Firestore rules if the error continues.' : error?.message || 'Could not save this edit.')
+      }
+      return
     }
 
-    // Clear the writing box immediately. Restore only if the message write itself fails.
-    setMessageText('')
-    const uid = auth?.currentUser?.uid
-    const isAcceptedFriend = uid && db && friendContacts.some((person) => person.id === activeId)
-    if (isAcceptedFriend) {
-      const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
-      const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
-      let sendStage = 'checking conversation membership'
-
-      try {
+    let sendStage = 'checking conversation membership'
+    try {
+      if (isGroup) {
+        const groupSnapshot = await getDoc(doc(db, 'conversations', conversationId))
+        const groupData = groupSnapshot.data()
+        if (!groupSnapshot.exists() || groupData?.type !== 'group' || !Array.isArray(groupData.memberIds) || !groupData.memberIds.includes(uid)) {
+          throw new Error('You are no longer a member of this group.')
+        }
+      } else {
         await runTransaction(db, async (transaction) => {
           const conversationRef = doc(db, 'conversations', conversationId)
           const snapshot = await transaction.get(conversationRef)
@@ -868,40 +1121,32 @@ function App({ profile, isAdmin = false }) {
             throw new Error('This conversation does not have the expected members.')
           }
         })
-
-        sendStage = 'writing the message'
-        await setDoc(messageRef, {
-          senderId: uid,
-          type: 'text',
-          text,
-          createdAt: serverTimestamp(),
-          ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-        })
-      } catch (error) {
-        setMessageText((current) => current.trim() ? current : text)
-        const details = error?.code === 'permission-denied'
-          ? 'Firestore denied ' + sendStage + '. Confirm that the latest firestore.rules are deployed to notification-32ea1.'
-          : error?.message || 'Could not send the message. Please try again.'
-        showToast(details)
-        return
       }
 
-      // Inbox preview and latest-activity ordering are derived from the message
-      // subcollection listener. No second write to the conversation document is needed.
+      sendStage = 'writing the message'
+      const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
+      await setDoc(messageRef, {
+        senderId: uid,
+        senderName: profile?.displayName || profile?.username || 'Converly user',
+        type: 'text',
+        text,
+        readBy: [uid],
+        reactions: {},
+        createdAt: serverTimestamp(),
+        ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
+      })
+      setMessageText('')
       setReplyTarget(null)
+      publishTyping(false)
       messageInputRef.current?.focus()
-      return
+    } catch (error) {
+      const details = error?.code === 'permission-denied'
+        ? 'Firestore denied ' + sendStage + '. Deploy the latest firestore.rules to notification-32ea1.'
+        : error?.message || 'Could not send the message. Please try again.'
+      showToast(details)
     }
-
-    const message = {
-      id: 'm-' + Date.now(), from: 'me', type: 'text', text,
-      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      status: 'sent',
-      ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
-    }
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: [...item.messages, message], preview: text, time: 'Now', lastActivityAt: Date.now() } : item))
-    setMessageText(''); setReplyTarget(null); messageInputRef.current?.focus()
   }
+
 
   const getMediaApiUrl = () => (String(import.meta.env.VITE_NOTIFICATION_API_URL || '').trim() || 'https://notification-api.mediatoolkit.workers.dev').replace(/\/+$/, '')
 
@@ -983,42 +1228,42 @@ function App({ profile, isAdmin = false }) {
 
     const uid = auth?.currentUser?.uid
     const apiUrl = getMediaApiUrl()
-    if (!uid) {
+    const isGroup = activeConversation.status === 'group'
+    const isAcceptedFriend = friendContacts.some((person) => person.id === activeId)
+    if (!uid || !db) {
       showToast('Sign in again before sharing an image.')
       return
     }
-    if (!db) {
-      showToast('Firebase is not configured. Check the VITE_FIREBASE_* values in .env.local.')
-      return
-    }
-    if (!friendContacts.some((person) => person.id === activeId)) {
-      showToast('This chat is not loaded as an accepted Firebase friendship. Refresh the page and confirm both accounts show Friends.')
-      return
-    }
-    if (!apiUrl) {
-      showToast('The image Worker URL is missing. Set VITE_NOTIFICATION_API_URL in .env.local and restart Vite.')
+    if (!isGroup && !isAcceptedFriend) {
+      showToast('Only accepted friends and current group members can share images.')
       return
     }
 
-    const conversationId = activeConversation.firebaseConversationId || directConversationId(uid, activeId)
+    const conversationId = getActiveConversationId(uid)
     const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
 
     try {
-      // Repair older conversations before requesting the Worker upload.
-      await runTransaction(db, async (transaction) => {
-        const conversationRef = doc(db, 'conversations', conversationId)
-        const snapshot = await transaction.get(conversationRef)
-        if (!snapshot.exists()) {
-          transaction.set(conversationRef, {
-            createdBy: uid,
-            memberIds: [uid, activeId].sort(),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
-          throw new Error('This conversation does not have the expected members.')
+      if (isGroup) {
+        const groupSnapshot = await getDoc(doc(db, 'conversations', conversationId))
+        if (!groupSnapshot.exists() || groupSnapshot.data()?.type !== 'group' || !groupSnapshot.data()?.memberIds?.includes(uid)) {
+          throw new Error('You are no longer a member of this group.')
         }
-      })
+      } else {
+        await runTransaction(db, async (transaction) => {
+          const conversationRef = doc(db, 'conversations', conversationId)
+          const snapshot = await transaction.get(conversationRef)
+          if (!snapshot.exists()) {
+            transaction.set(conversationRef, {
+              createdBy: uid,
+              memberIds: [uid, activeId].sort(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          } else if (!snapshot.data().memberIds?.includes(uid) || !snapshot.data().memberIds?.includes(activeId)) {
+            throw new Error('This conversation does not have the expected members.')
+          }
+        })
+      }
 
       const idToken = await getIdToken(auth.currentUser)
       const uploadForm = new FormData()
@@ -1038,9 +1283,12 @@ function App({ profile, isAdmin = false }) {
 
       await setDoc(messageRef, {
         senderId: uid,
+        senderName: profile?.displayName || profile?.username || 'Converly user',
         type: 'image',
         attachmentPath: uploadResult.filePath,
         viewOnce: true,
+        readBy: [uid],
+        reactions: {},
         createdAt: serverTimestamp(),
         ...(replyTarget ? { replyToId: replyTarget.id, replyToText: replyTarget.text || 'Message' } : {}),
       })
@@ -1055,8 +1303,7 @@ function App({ profile, isAdmin = false }) {
         }
         : item))
       setReplyTarget(null)
-      // The inbox listener reads the newest message directly, including photos.
-      showToast('Photo sent.')
+      showToast('View-once photo sent.')
     } catch (error) {
       showToast(error?.message || 'Could not send the image. Please try again.')
     }
@@ -1208,39 +1455,188 @@ function App({ profile, isAdmin = false }) {
 
   const beginReply = (message) => { setReplyTarget(message); setEditingMessageId(null); setMessageText(''); setSelectedMessageId(null); messageInputRef.current?.focus() }
   const beginEdit = (message) => { setEditingMessageId(message.id); setReplyTarget(null); setMessageText(message.text || ''); setSelectedMessageId(null); messageInputRef.current?.focus() }
-  const deleteMessage = (messageId) => {
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, messages: item.messages.filter((message) => message.id !== messageId) } : item))
-    setSelectedMessageId(null); showToast('Message removed from this browser preview')
+  const deleteMessage = async (messageId) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !conversationId || !messageId) return
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId, 'messages', messageId), {
+        text: '',
+        deletedAt: serverTimestamp(),
+      })
+      setSelectedMessageId(null)
+      showToast('Message deleted for everyone.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Only the message author can delete this message. Deploy the latest Firestore rules if needed.' : error?.message || 'Could not delete this message.')
+    }
   }
-  const toggleMessageReaction = (messageId, emoji) => {
-    setConversations((items) => items.map((item) => item.id === activeId ? {
-      ...item,
-      messages: item.messages.map((message) => {
-        if (message.id !== messageId) return message
-        const reactions = message.reactions || []
-        return { ...message, reactions: reactions.includes(emoji) ? reactions.filter((reaction) => reaction !== emoji) : [...reactions, emoji] }
-      }),
-    } : item))
-    setSelectedMessageId(null)
-    setReactionPickerMessageId(null)
+
+  const toggleMessageReaction = async (messageId, emoji) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    const message = activeConversation?.messages?.find((entry) => entry.id === messageId)
+    if (!uid || !db || !conversationId || !message || !emoji) return
+    try {
+      const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId)
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(messageRef)
+        if (!snapshot.exists() || snapshot.data().deletedAt) throw new Error('This message is no longer available.')
+        const reactions = { ...(snapshot.data().reactions || {}) }
+        if (reactions[uid] === emoji) delete reactions[uid]
+        else reactions[uid] = emoji
+        transaction.update(messageRef, { reactions })
+      })
+      setSelectedMessageId(null)
+      setReactionPickerMessageId(null)
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firestore denied this reaction. Deploy the latest Firestore rules.' : error?.message || 'Could not sync this reaction.')
+    }
   }
+
   const forwardMessageTo = (message, targetId) => {
     if (!targetId) return
     setConversations((items) => items.map((item) => item.id === targetId ? { ...item, messages: [...item.messages, { id: 'fwd-' + Date.now(), from: 'me', type: 'text', text: message.text || (message.type === 'image' ? 'Image' : (message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) ? 'Voice message' : 'Message'), forwarded: true, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), status: 'sent' }], preview: 'Forwarded message', time: 'Now', lastActivityAt: Date.now() } : item))
     setForwardMessageId(null); setSelectedMessageId(null); showToast('Message forwarded in this browser preview')
   }
 
-  const createGroup = () => {
+  const createGroup = async () => {
+    const uid = auth?.currentUser?.uid
     const title = groupName.trim()
-    const selected = directory.filter((person) => groupMemberIds.includes(person.id))
-    if (!title) { showToast('Enter a group name'); return }
-    if (!selected.length) { showToast('Choose at least one group member'); return }
-    const id = 'group-' + Date.now()
-    const group = { id, name: title, initials: title.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), tone: 6, status: 'group', members: (selected.length + 1) + ' members', memberIds: ['you', ...selected.map((person) => person.id)], admins: ['you'], moderators: [], preview: 'Group created', time: 'Now', unread: 0, pinned: false, favorite: false, archived: false, muted: false, messages: [] }
-    setConversations((items) => [group, ...items])
-    setActiveId(id); setView('messages'); setMobileChatOpen(true)
-    setShowGroupCreator(false); setShowNewChat(false); setGroupName(''); setGroupMemberIds([])
-    showToast('Group created in this browser preview')
+    const selected = friendContacts.filter((person) => groupMemberIds.includes(person.id))
+    if (!uid || !db) { showToast('Sign in again before creating a group.'); return }
+    if (!title || title.length > 48) { showToast('Enter a group name up to 48 characters.'); return }
+    if (!selected.length) { showToast('Choose at least one accepted friend.'); return }
+    if (selected.length > 49) { showToast('A group can contain up to 50 members.'); return }
+    const restricted = selected.find((person) => person.privacy?.whoCanAddToGroups === 'nobody')
+    if (restricted) { showToast(restricted.name + ' does not accept group invitations.'); return }
+
+    const initialMemberIds = [uid, selected[0].id]
+    const groupRef = doc(collection(db, 'conversations'))
+    const initialBatch = writeBatch(db)
+    initialBatch.set(groupRef, {
+      type: 'group',
+      title,
+      createdBy: uid,
+      memberIds: initialMemberIds,
+      adminIds: [uid],
+      moderatorIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    initialMemberIds.forEach((memberUid) => {
+      initialBatch.set(doc(db, 'conversations', groupRef.id, 'members', memberUid), {
+        uid: memberUid,
+        role: memberUid === uid ? 'admin' : 'member',
+        createdAt: serverTimestamp(),
+      })
+    })
+
+    try {
+      await initialBatch.commit()
+    } catch (error) {
+      showToast(error?.code === 'permission-denied'
+        ? 'Group creation was denied. Confirm the first invitee is an accepted friend and deploy the latest Firestore rules.'
+        : error?.message || 'Could not create this group.')
+      return
+    }
+
+    const group = {
+      id: groupRef.id,
+      firebaseConversationId: groupRef.id,
+      name: title,
+      initials: title.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+      status: 'group',
+      members: '2 members',
+      memberIds: initialMemberIds,
+      adminIds: [uid],
+      admins: ['you'],
+      moderatorIds: [],
+      moderators: [],
+      preview: 'Group created',
+      time: 'Now',
+      unread: 0,
+      pinned: false,
+      favorite: false,
+      archived: false,
+      muted: false,
+      messages: [],
+    }
+    setConversations((items) => [group, ...items.filter((item) => item.id !== group.id)])
+    setActiveId(group.id)
+    setView('messages')
+    setMobileChatOpen(true)
+    setShowGroupCreator(false)
+    setShowNewChat(false)
+    setGroupName('')
+    setGroupMemberIds([])
+
+    let addedCount = 2
+    for (const person of selected.slice(1)) {
+      const memberBatch = writeBatch(db)
+      memberBatch.update(groupRef, {
+        memberIds: arrayUnion(person.id),
+        updatedAt: serverTimestamp(),
+      })
+      memberBatch.set(doc(db, 'conversations', groupRef.id, 'members', person.id), {
+        uid: person.id,
+        role: 'member',
+        createdAt: serverTimestamp(),
+      })
+      try {
+        await memberBatch.commit()
+        addedCount += 1
+      } catch (error) {
+        showToast('Group created with ' + addedCount + ' members. Could not add ' + person.name + ': ' + (error?.message || 'permission denied.'))
+        return
+      }
+    }
+    showToast('Group created and synced with all ' + addedCount + ' members.')
+  }
+
+  const toggleGroupModerator = async (memberUid) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !activeConversation || !activeConversation.adminIds?.includes(uid) || !memberUid) return
+    const isModerator = (activeConversation.moderatorIds || []).includes(memberUid)
+    try {
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        moderatorIds: isModerator ? arrayRemove(memberUid) : arrayUnion(memberUid),
+        updatedAt: serverTimestamp(),
+      })
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Only group admins can change moderator roles.' : error?.message || 'Could not update this role.')
+    }
+  }
+
+  const addGroupMember = async (memberUid) => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    const person = friendContacts.find((entry) => entry.id === memberUid)
+    if (!uid || !db || !activeConversation || activeConversation.status !== 'group' || !activeConversation.adminIds?.includes(uid) || !person) {
+      showToast('Only an admin can add an accepted friend to this group.')
+      return
+    }
+    if (person.privacy?.whoCanAddToGroups === 'nobody') {
+      showToast(person.name + ' does not accept group invitations.')
+      return
+    }
+    if (activeConversation.memberIds.includes(memberUid)) return
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'conversations', conversationId), {
+      memberIds: arrayUnion(memberUid),
+      updatedAt: serverTimestamp(),
+    })
+    batch.set(doc(db, 'conversations', conversationId, 'members', memberUid), {
+      uid: memberUid,
+      role: 'member',
+      createdAt: serverTimestamp(),
+    })
+    try {
+      await batch.commit()
+      showToast(person.name + ' was added to the group.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Group membership change denied. Deploy the latest Firestore rules and confirm this person is your accepted friend.' : error?.message || 'Could not add this member.')
+    }
   }
 
   const createPoll = () => {
@@ -1259,7 +1655,48 @@ function App({ profile, isAdmin = false }) {
     } : item))
   }
 
-  const markAllRead = () => { setConversations((items) => items.map((item) => ({ ...item, unread: 0 }))); showToast('All conversations marked as read') }
+  const markAllRead = async () => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return
+    let marked = 0
+    try {
+      // Keep each batch scoped to one conversation so Firestore rule lookups
+      // for that parent are reused and stay within the access-call limit.
+      for (const conversation of conversations) {
+        if (!conversation.unread) continue
+        const conversationId = conversation.status === 'group'
+          ? (conversation.firebaseConversationId || conversation.id)
+          : (conversation.firebaseConversationId || directConversationId(uid, conversation.id))
+        const snapshot = await getDocs(query(
+          collection(db, 'conversations', conversationId, 'messages'),
+          orderBy('createdAt', 'desc'),
+          limit(100),
+        ))
+        const batch = writeBatch(db)
+        let pendingWrites = 0
+        for (const messageDocument of snapshot.docs) {
+          const data = messageDocument.data()
+          const expiryMillis = timestampToMillis(data.expiresAt)
+          if (data.senderId === uid || data.deletedAt || (expiryMillis && expiryMillis <= Date.now()) || (Array.isArray(data.readBy) && data.readBy.includes(uid))) continue
+          const patch = { readBy: arrayUnion(uid) }
+          if (!data.readAt) {
+            patch.readAt = serverTimestamp()
+            patch.expiresAt = Timestamp.fromMillis(Date.now() + MESSAGE_RETENTION_MS)
+          } else if (!data.expiresAt) {
+            patch.expiresAt = Timestamp.fromMillis((timestampToMillis(data.readAt) || Date.now()) + MESSAGE_RETENTION_MS)
+          }
+          batch.update(messageDocument.ref, patch)
+          pendingWrites += 1
+          marked += 1
+        }
+        if (pendingWrites) await batch.commit()
+      }
+      setConversations((items) => items.map((item) => ({ ...item, unread: 0 })))
+      showToast(marked ? 'Marked ' + marked + ' messages as read.' : 'All messages are already read.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firestore denied bulk read receipts. Deploy the latest Firestore rules.' : error?.message || 'Could not mark all messages as read.')
+    }
+  }
 
   const toggleDesktopNotifications = async () => {
     if (!notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -1275,17 +1712,28 @@ function App({ profile, isAdmin = false }) {
     showToast(activeConversation.favorite ? 'Removed from starred' : 'Added to starred')
   }
 
-  const toggleBlockContact = () => {
+  const toggleBlockContact = async () => {
     if (!activeConversation || activeConversation.status === 'group') return
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) { showToast('Sign in again before changing your block list.'); return }
+    const targetUid = activeConversation.id
+    const blockRef = doc(db, 'users', uid, 'blocks', targetUid)
     const nextBlocked = !activeConversation.blocked
-    setConversations((items) => items.map((item) => item.id === activeId ? { ...item, blocked: nextBlocked } : item))
-    const handle = String(activeConversation.username || activeConversation.id || '').replace(/^@/, '').toLowerCase()
     try {
-      const saved = JSON.parse(localStorage.getItem('notification-blocked-users') || '[]')
-      const updated = nextBlocked ? [...new Set([...saved, handle])] : saved.filter((value) => value !== handle)
-      localStorage.setItem('notification-blocked-users', JSON.stringify(updated))
-    } catch { /* Keep the conversation-level block state available in this prototype. */ }
-    showToast(nextBlocked ? 'User blocked on this device' : 'User unblocked')
+      if (nextBlocked) {
+        await setDoc(blockRef, {
+          uid: targetUid,
+          username: activeConversation.username || targetUid,
+          createdAt: serverTimestamp(),
+        })
+      } else {
+        await deleteDoc(blockRef)
+      }
+      setConversations((items) => items.map((item) => item.id === activeId ? { ...item, blocked: nextBlocked } : item))
+      showToast(nextBlocked ? 'User blocked on your account.' : 'User unblocked.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firebase denied this block change. Deploy the latest Firestore rules.' : error?.message || 'Could not update the block list.')
+    }
   }
 
   const archiveConversation = () => {
@@ -1295,18 +1743,43 @@ function App({ profile, isAdmin = false }) {
     showToast(activeConversation.archived ? 'Conversation restored' : 'Conversation archived')
   }
 
-  const leaveGroup = () => {
-    if (!activeConversation || activeConversation.status !== 'group') return
-    const groupName = activeConversation.name
-    const remaining = conversations.filter((item) => item.id !== activeId)
-    setConversations(remaining)
-    setActiveId(remaining.find((item) => !item.archived)?.id || remaining[0]?.id || '')
-    setShowChatMenu(false)
-    setShowDetails(false)
-    setMobileChatOpen(false)
-    setView('messages')
-    showToast(`You left ${groupName}`)
+  const leaveGroup = async () => {
+    const uid = auth?.currentUser?.uid
+    const conversationId = getActiveConversationId(uid)
+    if (!uid || !db || !activeConversation || activeConversation.status !== 'group' || !conversationId) return
+    const remainingIds = activeConversation.memberIds.filter((memberUid) => memberUid !== uid)
+    const wasAdmin = (activeConversation.adminIds || []).includes(uid)
+    const promotedUid = wasAdmin ? remainingIds[0] : ''
+    const nextAdminIds = wasAdmin
+      ? [...(activeConversation.adminIds || []).filter((memberUid) => memberUid !== uid && memberUid !== promotedUid), ...(promotedUid ? [promotedUid] : [])]
+      : (activeConversation.adminIds || [])
+    const batch = writeBatch(db)
+    batch.delete(doc(db, 'conversations', conversationId, 'members', uid))
+    batch.update(doc(db, 'conversations', conversationId), {
+      memberIds: arrayRemove(uid),
+      adminIds: nextAdminIds,
+      moderatorIds: arrayRemove(uid),
+      updatedAt: serverTimestamp(),
+    })
+    if (promotedUid) {
+      batch.set(doc(db, 'conversations', conversationId, 'members', promotedUid), {
+        role: 'admin',
+      }, { merge: true })
+    }
+    try {
+      await batch.commit()
+      setConversations((items) => items.filter((item) => item.id !== conversationId))
+      setActiveId('')
+      setShowChatMenu(false)
+      setShowDetails(false)
+      setMobileChatOpen(false)
+      setView('messages')
+      showToast('You left ' + activeConversation.name + '.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Could not leave this group. Deploy the latest Firestore rules.' : error?.message || 'Could not leave this group.')
+    }
   }
+
 
   const sendFriendRequest = async (person) => {
     const uid = auth?.currentUser?.uid
@@ -1348,7 +1821,7 @@ function App({ profile, isAdmin = false }) {
         if (senderProfile.exists()) {
           const data = senderProfile.data()
           const name = normalizeDisplayName(data.displayName || data.username)
-          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
+          setFriendContacts((items) => [...items.filter((item) => item.id !== request.senderId), { id: request.senderId, name, username: data.username, avatarId: data.avatarId, privacy: data.privacy || {}, initials: name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(), status: 'offline', tone: 2 }])
         }
         showToast('Friend request accepted')
       } else {
@@ -1638,8 +2111,8 @@ function App({ profile, isAdmin = false }) {
                 person={activeConversation}
                 size="header"
                 showStatus
-                subtitle={activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}
-                subtitleClass={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}
+                subtitle={typingUsers.length > 0 ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}
+                subtitleClass={typingUsers.length > 0 ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}
               />
               <div className="chat-header-actions">
                 <button className="icon-button" onClick={() => setMessageSearchOpen((open) => !open)} aria-label="Search messages" title="Search messages"><Icon name="search" /></button>
@@ -1683,7 +2156,9 @@ function App({ profile, isAdmin = false }) {
                     <div className="message-content">
                       {message.sender && <span className="message-sender">{message.sender}</span>}
                       {message.replyToText && <div className="reply-context"><strong>Replying to</strong><span>{message.replyToText}</span></div>}
-                      {message.type === 'poll' ? (
+                      {message.deleted ? (
+                        <div className="message-bubble message-deleted">This message was deleted</div>
+                      ) : message.type === 'poll' ? (
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
                         message.from === 'me' ? (
@@ -1713,7 +2188,7 @@ function App({ profile, isAdmin = false }) {
                         <div className="message-bubble">{message.text}</div>
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
-                      <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
+                      <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name={message.status === 'read' ? 'checkDouble' : 'check'} size={13} className={message.status === 'read' ? 'read-check is-read' : 'read-check'} />}{message.pinned && <Icon name="pin" size={12} />}</span>
                       {!(message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
@@ -1736,15 +2211,15 @@ function App({ profile, isAdmin = false }) {
                     </div>
                   </div>
                 ))}
-                {activeConversation.typing && (
-                  <div className="message-row message-incoming typing-row" aria-label={activeConversation.name + ' is typing'}>
-                    <Avatar person={activeConversation} size="message" />
+                {typingUsers.length > 0 && (
+                  <div className="message-row message-incoming typing-row" aria-label={typingUsers.length === 1 ? 'A member is typing' : typingUsers.length + ' members are typing'}>
+                    <Avatar person={directory.find((person) => person.id === typingUsers[0].uid) || activeConversation} size="message" />
                     <div className="typing-indicator-bubble" role="status" aria-live="polite" aria-label="Typing">
                       <span />
                       <span />
                       <span />
                     </div>
-                    <span className="typing-label">typing</span>
+                    <span className="typing-label">{typingUsers.length === 1 ? 'typing' : typingUsers.length + ' typing'}</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -1773,7 +2248,7 @@ function App({ profile, isAdmin = false }) {
                   </div>
                 ) : (
                   <>
-                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
@@ -1855,8 +2330,8 @@ function App({ profile, isAdmin = false }) {
             <small>{activeConversation.blocked ? 'This user is blocked on this device. Unblock to send messages.' : 'Blocking is stored locally in this prototype. Server-side enforcement requires Firebase.'}</small>
           </div>}
           {activeConversation.status === 'group' && <div className="details-block group-management-block"><span className="section-label">GROUP MEMBERS · {(activeConversation.memberIds || []).length}</span>
-            {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, moderators: (item.moderators || []).includes(memberId) ? (item.moderators || []).filter((id) => id !== memberId) : [...(item.moderators || []), memberId] } : item))}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
-            {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberId = event.target.value; if (memberId) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, memberIds: [...new Set([...(item.memberIds || []), memberId])], members: (new Set([...(item.memberIds || []), memberId])).size + ' members' } : item)) }}><option value="" disabled>Add a member…</option>{directory.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
+            {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => toggleGroupModerator(memberId)}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
+            {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberUid = event.target.value; event.target.value = ''; if (memberUid) addGroupMember(memberUid) }}><option value="" disabled>Add a friend…</option>{friendContacts.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
           </div>}
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
@@ -1915,7 +2390,7 @@ function App({ profile, isAdmin = false }) {
             <label className="group-name-field">Group name<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="e.g. Weekend plans" maxLength={48} /></label>
             <div className="group-member-picker"><strong>Add people</strong>{directory.filter((person) => person.status !== 'group').map((person) => <label key={person.id}><input type="checkbox" checked={groupMemberIds.includes(person.id)} onChange={(event) => setGroupMemberIds((ids) => event.target.checked ? [...ids, person.id] : ids.filter((id) => id !== person.id))} /><Avatar person={person} size="sm" /><span>{person.name}</span></label>)}</div>
             <div className="avatar-picker-actions"><button className="secondary-button" onClick={() => setShowGroupCreator(false)}>Cancel</button><button className="primary-button" onClick={createGroup}>Create group</button></div>
-            <div className="modal-footnote">Group creation is local-only until Firebase membership services are connected.</div>
+            <div className="modal-footnote">Groups sync with Firebase. You can invite accepted friends and manage members from group details.</div>
           </section>
         </div>
       )}

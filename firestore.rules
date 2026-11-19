@@ -21,6 +21,46 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
     }
 
+    function isGroupAdmin(conversationId) {
+      return isConversationMember(conversationId)
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.adminIds;
+    }
+
+    function canReceiveGroupInvite(targetUid) {
+      let userPath = /databases/$(database)/documents/users/$(targetUid);
+      return exists(userPath)
+        && (
+          !('privacy' in get(userPath).data)
+          || !('whoCanAddToGroups' in get(userPath).data.privacy)
+          || get(userPath).data.privacy.whoCanAddToGroups != 'nobody'
+        );
+    }
+
+    function canReceiveDirectMessage(conversationId) {
+      let conversation = get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+      let members = conversation.memberIds;
+      let recipientUid = members[0] == request.auth.uid ? members[1] : members[0];
+      let recipientPath = /databases/$(database)/documents/users/$(recipientUid);
+      return conversation.type == 'group'
+        || (
+          members.size() == 2
+          && exists(recipientPath)
+          && (
+            !('privacy' in get(recipientPath).data)
+            || !('whoCanMessage' in get(recipientPath).data.privacy)
+            || get(recipientPath).data.privacy.whoCanMessage != 'nobody'
+          )
+        );
+    }
+
+    function hasOneNewGroupMemberRecord(conversationId) {
+      let addedMemberIds = request.resource.data.memberIds.removeAll(resource.data.memberIds);
+      return addedMemberIds.size() == 1
+        && !exists(/databases/$(database)/documents/conversations/$(conversationId)/members/$(addedMemberIds[0]))
+        && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(addedMemberIds[0]));
+    }
+
     function isBlockedBetweenMembers(conversationId) {
       let members = get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
       return members.size() == 2
@@ -133,6 +173,11 @@ service cloud.firestore {
           !('privacy' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data)
           || !('discoverable' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy)
           || get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.discoverable != false
+        )
+        && (
+          !('privacy' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data)
+          || !('whoCanMessage' in get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy)
+          || get(/databases/$(database)/documents/users/$(request.resource.data.recipientId)).data.privacy.whoCanMessage != 'nobody'
         );
       allow update: if signedIn()
         && resource.data.recipientId == request.auth.uid
@@ -159,35 +204,157 @@ service cloud.firestore {
         && (!exists(/databases/$(database)/documents/conversations/$(conversationId))
           || request.auth.uid in resource.data.memberIds);
       allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      // Direct conversations require an accepted friendship. Group creation
+      // is atomic with one membership record per invited accepted friend.
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.memberIds is list
-        && request.resource.data.memberIds.size() == 2
         && request.auth.uid in request.resource.data.memberIds
         && request.resource.data.keys().hasAll(['createdBy', 'memberIds', 'createdAt', 'updatedAt'])
-        && isAcceptedFriend(
-          request.resource.data.memberIds[0] == request.auth.uid
-            ? request.resource.data.memberIds[1]
-            : request.resource.data.memberIds[0]
+        && (
+          (
+            !('type' in request.resource.data)
+            && request.resource.data.memberIds.size() == 2
+            && request.resource.data.keys().hasOnly(['createdBy', 'memberIds', 'createdAt', 'updatedAt'])
+            && isAcceptedFriend(
+              request.resource.data.memberIds[0] == request.auth.uid
+                ? request.resource.data.memberIds[1]
+                : request.resource.data.memberIds[0]
+            )
+          )
+          ||
+          (
+            request.resource.data.type == 'group'
+            && request.resource.data.memberIds.size() == 2
+            && request.resource.data.memberIds[0] != request.resource.data.memberIds[1]
+            && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/members/$(request.resource.data.memberIds[0] == request.auth.uid ? request.resource.data.memberIds[1] : request.resource.data.memberIds[0]))
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 48
+            && request.resource.data.adminIds == [request.auth.uid]
+            && request.resource.data.moderatorIds == []
+            && request.resource.data.keys().hasOnly([
+              'type', 'title', 'createdBy', 'memberIds', 'adminIds',
+              'moderatorIds', 'createdAt', 'updatedAt'
+            ])
+          )
         );
+
       allow update: if isConversationMember(conversationId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview', 'lastMessageSenderId'])
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageSenderId'])
-          || request.resource.data.lastMessageSenderId == request.auth.uid);
+        && (
+          (
+            resource.data.type != 'group'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['title', 'photoURL', 'updatedAt', 'lastMessageAt', 'lastMessagePreview', 'lastMessageSenderId'])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageSenderId'])
+              || request.resource.data.lastMessageSenderId == request.auth.uid)
+          )
+          ||
+          (
+            resource.data.type == 'group'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['title', 'updatedAt', 'memberIds', 'adminIds', 'moderatorIds'])
+            && (
+              (
+                request.auth.uid in resource.data.adminIds
+                && (
+                  (
+                    request.resource.data.memberIds == resource.data.memberIds
+                    && request.resource.data.adminIds == resource.data.adminIds
+                    && request.resource.data.moderatorIds is list
+                    && request.resource.data.moderatorIds.hasOnly(request.resource.data.memberIds)
+                  )
+                  ||
+                  (
+                    request.resource.data.memberIds is list
+                    && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+                    && request.resource.data.memberIds.size() <= 50
+                    && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+                    && hasOneNewGroupMemberRecord(conversationId)
+                    && request.resource.data.adminIds == resource.data.adminIds
+                    && request.resource.data.moderatorIds == resource.data.moderatorIds
+                  )
+                  ||
+                  (
+                    !(request.auth.uid in request.resource.data.memberIds)
+                    && request.resource.data.memberIds is list
+                    && request.resource.data.memberIds.size() + 1 == resource.data.memberIds.size()
+                    && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+                    && request.resource.data.adminIds is list
+                    && request.resource.data.adminIds.hasAll(resource.data.adminIds.removeAll([request.auth.uid]))
+                    && request.resource.data.adminIds.size() >= resource.data.adminIds.size() - 1
+                    && request.resource.data.adminIds.size() <= resource.data.adminIds.size()
+                    && (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() > 0)
+                    && request.resource.data.adminIds.hasOnly(request.resource.data.memberIds)
+                    && request.resource.data.moderatorIds is list
+                    && request.resource.data.moderatorIds.hasOnly(request.resource.data.memberIds)
+                  )
+                )
+              )
+              ||
+              (
+                request.auth.uid in resource.data.memberIds
+                && !(request.auth.uid in request.resource.data.memberIds)
+                && request.resource.data.memberIds is list
+                && request.resource.data.memberIds.size() + 1 == resource.data.memberIds.size()
+                && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+                && request.resource.data.adminIds == resource.data.adminIds
+                && request.resource.data.moderatorIds is list
+                && request.resource.data.moderatorIds.hasOnly(request.resource.data.memberIds)
+              )
+            )
+          )
+        );
       allow delete: if false;
 
+      match /typing/{uid} {
+        allow read: if isConversationMember(conversationId);
+        allow create, update: if isConversationMember(conversationId)
+          && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.isTyping is bool
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt']);
+        allow delete: if isConversationMember(conversationId) && request.auth.uid == uid;
+      }
+
       match /members/{uid} {
-        allow read, write: if false;
+        allow read: if isConversationMember(conversationId);
+        allow create: if signedIn()
+          && existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+          && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+          && request.auth.uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.adminIds
+          && uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds
+          && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'createdAt'])
+          && (uid == request.auth.uid || (isAcceptedFriend(uid) && canReceiveGroupInvite(uid)));
+        allow update: if signedIn()
+          && isGroupAdmin(conversationId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && request.resource.data.role == 'admin'
+          && uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.adminIds
+          && uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds;
+        allow delete: if signedIn()
+          && isConversationMember(conversationId)
+          && (request.auth.uid == uid || isGroupAdmin(conversationId));
       }
 
       match /messages/{messageId} {
         allow read: if isConversationMember(conversationId);
+
         allow create: if isConversationMember(conversationId)
           && !isBlockedBetweenMembers(conversationId)
+          && canReceiveDirectMessage(conversationId)
           && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt'])
+          && request.resource.data.keys().hasAll(['senderId', 'type', 'createdAt', 'readBy', 'reactions'])
           && request.resource.data.type in ['text', 'image']
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.readBy is list
+          && request.resource.data.readBy == [request.auth.uid]
+          && request.resource.data.reactions is map
+          && request.resource.data.reactions.size() == 0
           && (
             (
               request.resource.data.type == 'text'
@@ -207,28 +374,105 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'senderId', 'type', 'text', 'createdAt', 'editedAt',
             'replyToId', 'replyToText', 'attachmentPath', 'viewOnce', 'expiresAt',
-            'forwardedFrom', 'mentionIds'
+            'forwardedFrom', 'mentionIds', 'readBy', 'readAt', 'reactions'
           ]);
+
         allow update: if isConversationMember(conversationId)
           && (
             (
               resource.data.senderId == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['text', 'editedAt', 'deletedAt'])
+              && (
+                (
+                  resource.data.type == 'text'
+                  && request.resource.data.text is string
+                  && request.resource.data.text.size() > 0
+                  && request.resource.data.text.size() <= 5000
+                  && request.resource.data.editedAt == request.time
+                  && !('deletedAt' in request.resource.data)
+                )
+                ||
+                (
+                  request.resource.data.text == ''
+                  && request.resource.data.deletedAt == request.time
+                )
+              )
+            )
+            ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['readBy', 'readAt', 'expiresAt'])
+              && request.resource.data.readBy is list
+              && request.resource.data.readBy.hasAll(
+                ('readBy' in resource.data && resource.data.readBy is list) ? resource.data.readBy : []
+              )
+              && request.auth.uid in request.resource.data.readBy
+              && request.resource.data.readBy.size()
+                <= (('readBy' in resource.data && resource.data.readBy is list) ? resource.data.readBy.size() : 0) + 1
+              && resource.data.senderId != request.auth.uid
+              && (
+                !('readAt' in resource.data)
+                  ? request.resource.data.readAt == request.time
+                    && request.resource.data.expiresAt is timestamp
+                    && request.resource.data.expiresAt > request.time
+                    && request.resource.data.expiresAt <= request.time + duration.value(24, 'h')
+                  : request.resource.data.readAt == resource.data.readAt
+                    && (
+                      'expiresAt' in resource.data
+                        ? request.resource.data.expiresAt == resource.data.expiresAt
+                        : request.resource.data.expiresAt == resource.data.readAt + duration.value(24, 'h')
+                    )
+              )
             )
             ||
             (
               resource.data.type == 'image'
               && resource.data.viewOnce == true
-              && resource.data.senderId != request.auth.uid
-              && !('viewedByUid' in resource.data)
-              && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['viewedByUid', 'viewedAt'])
-              && request.resource.data.viewedByUid == request.auth.uid
-              && request.resource.data.viewedAt is timestamp
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewedByUids'])
+              && request.resource.data.viewedByUids is list
+              && request.resource.data.viewedByUids.hasAll(
+                ('viewedByUids' in resource.data && resource.data.viewedByUids is list) ? resource.data.viewedByUids : []
+              )
+              && request.auth.uid in request.resource.data.viewedByUids
+              && existsAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)/views/$(request.auth.uid))
+              && getAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)/views/$(request.auth.uid)).data.viewerUid == request.auth.uid
+              && request.resource.data.viewedByUids.size()
+                <= (('viewedByUids' in resource.data && resource.data.viewedByUids is list) ? resource.data.viewedByUids.size() : 0) + 1
+            )
+            ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+              && request.resource.data.reactions is map
+              && request.resource.data.reactions.diff(
+                ('reactions' in resource.data && resource.data.reactions is map) ? resource.data.reactions : {}
+              ).affectedKeys().hasOnly([request.auth.uid])
+              && (
+                !(request.auth.uid in request.resource.data.reactions)
+                || request.resource.data.reactions[request.auth.uid] in [
+                  '👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉',
+                  '👏', '😍', '🤔', '🙌', '💯', '👎', '😡', '🤝'
+                ]
+              )
             )
           );
+
         allow delete: if false;
+
+        match /views/{viewerUid} {
+          allow get: if signedIn() && request.auth.uid == viewerUid;
+          allow list: if false;
+          allow create: if signedIn()
+            && request.auth.uid == viewerUid
+            && isConversationMember(conversationId)
+            && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.type == 'image'
+            && get(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)).data.viewOnce == true
+            && request.resource.data.viewerUid == viewerUid
+            && request.resource.data.keys().hasOnly(['viewerUid', 'viewedAt'])
+            && request.resource.data.viewedAt is timestamp
+            && !exists(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)/views/$(viewerUid));
+          allow update, delete: if false;
+        }
       }
 
       match /polls/{pollId} {

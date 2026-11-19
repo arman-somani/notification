@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, fix/full-site-chat-typography, fix/converly-chat-emoji-and-sync]
+    branches: [main, fix/full-site-chat-typography, fix/converly-chat-emoji-and-sync, fix/converly-full-chat-repair]
   pull_request:
   workflow_dispatch:
 
@@ -24,6 +24,8 @@ jobs:
         run: npm ci
       - name: Security audit
         run: npm audit --audit-level=high
+      - name: Unit tests
+        run: npm test
       - name: Lint
         run: npm run lint
       - name: Build

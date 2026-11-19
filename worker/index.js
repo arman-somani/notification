@@ -82,6 +82,15 @@ function firestoreField(document, field, type = "stringValue") {
     : undefined;
 }
 
+async function firestoreGetIfExists(path, idToken, env) {
+  try {
+    return await firestoreGet(path, idToken, env);
+  } catch (error) {
+    if (error && error.status === 404) return null;
+    throw error;
+  }
+}
+
 async function requireConversationMember(conversationId, uid, idToken, env) {
   const document = await firestoreGet(
     "conversations/" + encodeURIComponent(conversationId),
@@ -98,6 +107,26 @@ async function requireConversationMember(conversationId, uid, idToken, env) {
     throw error;
   }
   return document;
+}
+
+async function requireNotBlocked(conversationDocument, uid, idToken, env) {
+  const values = conversationDocument && conversationDocument.fields &&
+    conversationDocument.fields.memberIds && conversationDocument.fields.memberIds.arrayValue &&
+    conversationDocument.fields.memberIds.arrayValue.values || [];
+  const memberIds = values.map((entry) => entry.stringValue).filter(Boolean);
+  if (memberIds.length !== 2) return
+  const otherUid = memberIds.find((memberUid) => memberUid !== uid)
+  if (!otherUid) return
+  const [myBlock, theirBlock] = await Promise.all([
+    firestoreGetIfExists("users/" + encodeURIComponent(uid) + "/blocks/" + encodeURIComponent(otherUid), idToken, env),
+    firestoreGetIfExists("users/" + encodeURIComponent(otherUid) + "/blocks/" + encodeURIComponent(uid), idToken, env),
+  ])
+  if (myBlock || theirBlock) {
+    const error = new Error("Media is unavailable because one of these accounts has blocked the other.");
+    error.status = 403;
+    error.code = "BLOCKED_CONVERSATION";
+    throw error;
+  }
 }
 
 function bytesToHex(bytes) {
@@ -187,10 +216,10 @@ async function getPrivateImage(filePath, env) {
   return response;
 }
 
-async function markRecipientView(messageDocument, conversationId, messageId, uid, idToken, env) {
-  if (!messageDocument.updateTime) throw new Error("The image message has no Firestore update timestamp.");
-  const name = "projects/" + env.FIREBASE_PROJECT_ID +
+async function markRecipientView(conversationId, messageId, uid, idToken, env) {
+  const base = "projects/" + env.FIREBASE_PROJECT_ID +
     "/databases/(default)/documents/conversations/" + conversationId + "/messages/" + messageId;
+  const viewName = base + "/views/" + uid;
   const endpoint = "https://firestore.googleapis.com/v1/projects/" +
     encodeURIComponent(env.FIREBASE_PROJECT_ID) + "/databases/(default)/documents:commit";
   const response = await fetch(endpoint, {
@@ -200,26 +229,39 @@ async function markRecipientView(messageDocument, conversationId, messageId, uid
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      writes: [{
-        update: {
-          name: name,
-          fields: {
-            viewedByUid: { stringValue: uid },
-            viewedAt: { timestampValue: new Date().toISOString() },
+      writes: [
+        {
+          update: {
+            name: viewName,
+            fields: {
+              viewerUid: { stringValue: uid },
+              viewedAt: { timestampValue: new Date().toISOString() },
+            },
           },
+          currentDocument: { exists: false },
         },
-        updateMask: { fieldPaths: ["viewedByUid", "viewedAt"] },
-        currentDocument: { updateTime: messageDocument.updateTime },
-      }],
+        {
+          transform: {
+            document: base,
+            fieldTransforms: [{
+              fieldPath: "viewedByUids",
+              appendMissingElements: { values: [{ stringValue: uid }] },
+            }],
+          },
+          currentDocument: { exists: true },
+        },
+      ],
     }),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = result && result.error && result.error.message ||
-      "Could not claim this one-time image view.";
+    const alreadyOpened = response.status === 409 || response.status === 412;
+    const message = alreadyOpened
+      ? "This image has already been opened on this account."
+      : result && result.error && result.error.message || "Could not claim this one-time image view.";
     const error = new Error(message);
-    error.status = response.status === 409 || response.status === 412 ? 409 : response.status;
-    error.code = result && result.error && result.error.status || "IMAGE_VIEW_CLAIM_FAILED";
+    error.status = alreadyOpened ? 410 : response.status;
+    error.code = alreadyOpened ? "image_already_opened" : (result && result.error && result.error.status || "IMAGE_VIEW_CLAIM_FAILED");
     throw error;
   }
 }
@@ -242,7 +284,8 @@ async function handleUpload(request, env) {
     return errorResponse(request, env, "Choose a JPG, PNG, WEBP or GIF image smaller than 3 MB.", 400, "invalid_image");
   }
 
-  await requireConversationMember(conversationId, uid, idToken, env);
+  const conversationDocument = await requireConversationMember(conversationId, uid, idToken, env);
+  await requireNotBlocked(conversationDocument, uid, idToken, env);
   const uploaded = await uploadToImageKit(file, conversationId, messageId, env);
   return jsonResponse(request, env, {
     filePath: uploaded.filePath,
@@ -262,6 +305,8 @@ async function handleOpen(request, env) {
     return errorResponse(request, env, "Conversation or message ID is invalid.", 400, "invalid_path");
   }
 
+  const conversationDocument = await requireConversationMember(conversationId, uid, idToken, env);
+  await requireNotBlocked(conversationDocument, uid, idToken, env);
   const messageDocument = await firestoreGet(
     "conversations/" + encodeURIComponent(conversationId) + "/messages/" + encodeURIComponent(messageId),
     idToken,
@@ -271,22 +316,26 @@ async function handleOpen(request, env) {
   const senderId = firestoreField(messageDocument, "senderId");
   const filePath = firestoreField(messageDocument, "attachmentPath");
   const viewOnce = firestoreField(messageDocument, "viewOnce", "booleanValue");
-  const viewedByUid = firestoreField(messageDocument, "viewedByUid");
+  const expiresAt = firestoreField(messageDocument, "expiresAt", "timestampValue");
 
   if (type !== "image" || viewOnce !== true || !filePath) {
     return errorResponse(request, env, "This image message is incomplete or unavailable.", 404, "image_not_found");
   }
-
-  const isSender = senderId === uid;
-  if (!isSender && viewedByUid) {
-    return errorResponse(request, env, "This image has already been opened.", 410, "image_already_opened");
+  if (expiresAt && Date.parse(expiresAt) <= Date.now()) {
+    return errorResponse(request, env, "This image has expired.", 410, "image_expired");
   }
 
-  // Fetch before claiming the recipient's view so delivery failures do not consume it.
+  const viewPath = "conversations/" + encodeURIComponent(conversationId) +
+    "/messages/" + encodeURIComponent(messageId) + "/views/" + encodeURIComponent(uid);
+  const priorView = await firestoreGetIfExists(viewPath, idToken, env);
+  if (priorView) {
+    return errorResponse(request, env, "This image has already been opened on this account.", 410, "image_already_opened");
+  }
+
+  // Every member, including the sender, gets one account-level view. The
+  // conditional create and viewer-list transform prevent duplicate opens.
   const imageResponse = await getPrivateImage(filePath, env);
-  if (!isSender) {
-    await markRecipientView(messageDocument, conversationId, messageId, uid, idToken, env);
-  }
+  await markRecipientView(conversationId, messageId, uid, idToken, env);
 
   const headers = {
     ...corsHeaders(request, env),
