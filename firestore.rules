@@ -255,7 +255,9 @@ service cloud.firestore {
                     && resource.data.memberIds.hasAll(request.resource.data.memberIds)
                     && request.resource.data.adminIds is list
                     && request.resource.data.adminIds.hasAll(resource.data.adminIds.removeAll([request.auth.uid]))
-                    && request.resource.data.adminIds.size() == resource.data.adminIds.size()
+                    && request.resource.data.adminIds.size() >= resource.data.adminIds.size() - 1
+                    && request.resource.data.adminIds.size() <= resource.data.adminIds.size()
+                    && (request.resource.data.memberIds.size() == 0 || request.resource.data.adminIds.size() > 0)
                     && request.resource.data.adminIds.hasOnly(request.resource.data.memberIds)
                     && request.resource.data.moderatorIds is list
                     && request.resource.data.moderatorIds.hasOnly(request.resource.data.memberIds)
@@ -359,7 +361,7 @@ service cloud.firestore {
             ||
             (
               request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['readBy', 'readAt'])
+                .hasOnly(['readBy', 'readAt', 'expiresAt'])
               && request.resource.data.readBy is list
               && request.resource.data.readBy.hasAll(
                 ('readBy' in resource.data && resource.data.readBy is list) ? resource.data.readBy : []
@@ -371,7 +373,15 @@ service cloud.firestore {
               && (
                 !('readAt' in resource.data)
                   ? request.resource.data.readAt == request.time
+                    && request.resource.data.expiresAt is timestamp
+                    && request.resource.data.expiresAt > request.time
+                    && request.resource.data.expiresAt <= request.time + duration.value(24, 'h')
                   : request.resource.data.readAt == resource.data.readAt
+                    && (
+                      'expiresAt' in resource.data
+                        ? request.resource.data.expiresAt == resource.data.expiresAt
+                        : request.resource.data.expiresAt == resource.data.readAt + duration.value(24, 'h')
+                    )
               )
             )
             ||
