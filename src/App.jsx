@@ -3,7 +3,7 @@ import { getIdToken, signOut } from 'firebase/auth'
 import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { onDisconnect, onValue, push, ref, serverTimestamp as realtimeServerTimestamp, set as setRealtimeValue } from 'firebase/database'
 import { auth, db, realtimeDb } from './firebase/client'
-import { countUnreadMessages, mapGroupConversation, normalizeMessage } from './firebase/chatModel.js'
+import { countUnreadMessages, mapGroupConversation, normalizeMessage, timestampToMillis } from './firebase/chatModel.js'
 import './App.css'
 import AccountPrivacyPanel from './AccountPrivacyPanel'
 import AdminDashboard from './AdminDashboard'
@@ -705,7 +705,8 @@ function App({ profile, isAdmin = false }) {
             patch.readAt = serverTimestamp()
             patch.expiresAt = Timestamp.fromMillis(Date.now() + MESSAGE_RETENTION_MS)
           } else if (!data.expiresAt) {
-            patch.expiresAt = Timestamp.fromMillis(data.readAt.toMillis() + MESSAGE_RETENTION_MS)
+            const readAtMillis = timestampToMillis(data.readAt)
+            patch.expiresAt = Timestamp.fromMillis((readAtMillis || Date.now()) + MESSAGE_RETENTION_MS)
           }
           batch.update(messageDoc.ref, patch)
         })
@@ -1704,9 +1705,7 @@ function App({ profile, isAdmin = false }) {
     })
     if (promotedUid) {
       batch.set(doc(db, 'conversations', conversationId, 'members', promotedUid), {
-        uid: promotedUid,
         role: 'admin',
-        createdAt: serverTimestamp(),
       }, { merge: true })
     }
     try {
