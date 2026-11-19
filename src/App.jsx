@@ -281,6 +281,7 @@ function App({ profile, isAdmin = false }) {
   const [discoveredUsers, setDiscoveredUsers] = useState([])
   const [friendContacts, setFriendContacts] = useState([])
   const [typingUsers, setTypingUsers] = useState([])
+  const typingPublishedRef = useRef(false)
   const [incomingFriendRequests, setIncomingFriendRequests] = useState([])
   const [friendRequestError, setFriendRequestError] = useState('')
   const [showFriendRequests, setShowFriendRequests] = useState(false)
@@ -1016,16 +1017,30 @@ function App({ profile, isAdmin = false }) {
       : (activeConversation.firebaseConversationId || directConversationId(uid, activeId))
   }
 
-  const publishTyping = (isTyping) => {
+  const publishTyping = (isTyping, force = false) => {
     const uid = auth?.currentUser?.uid
     const conversationId = getActiveConversationId(uid)
+    const nextState = Boolean(isTyping)
     if (!uid || !db || !conversationId) return
+    if (!force && typingPublishedRef.current === nextState) return
+    typingPublishedRef.current = nextState
     setDoc(doc(db, 'conversations', conversationId, 'typing', uid), {
       uid,
-      isTyping: Boolean(isTyping),
+      isTyping: nextState,
       updatedAt: serverTimestamp(),
     }, { merge: true }).catch((error) => console.warn('[Converly] Could not update typing state:', error))
   }
+
+  useEffect(() => {
+    const isTyping = Boolean(messageText.trim())
+    publishTyping(isTyping, true)
+    if (!isTyping) return undefined
+    const heartbeat = window.setInterval(() => publishTyping(true, true), 5000)
+    return () => {
+      window.clearInterval(heartbeat)
+      publishTyping(false)
+    }
+  }, [Boolean(messageText.trim()), activeId])
 
   const handleSend = async (event) => {
     event?.preventDefault()
@@ -1108,6 +1123,7 @@ function App({ profile, isAdmin = false }) {
       const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'))
       await setDoc(messageRef, {
         senderId: uid,
+        senderName: profile?.displayName || profile?.username || 'Converly user',
         type: 'text',
         text,
         readBy: [uid],
@@ -1263,6 +1279,7 @@ function App({ profile, isAdmin = false }) {
 
       await setDoc(messageRef, {
         senderId: uid,
+        senderName: profile?.displayName || profile?.username || 'Converly user',
         type: 'image',
         attachmentPath: uploadResult.filePath,
         viewOnce: true,
@@ -1455,11 +1472,16 @@ function App({ profile, isAdmin = false }) {
     const conversationId = getActiveConversationId(uid)
     const message = activeConversation?.messages?.find((entry) => entry.id === messageId)
     if (!uid || !db || !conversationId || !message || !emoji) return
-    const reactions = { ...(message.reactionByUid || {}) }
-    if (reactions[uid] === emoji) delete reactions[uid]
-    else reactions[uid] = emoji
     try {
-      await updateDoc(doc(db, 'conversations', conversationId, 'messages', messageId), { reactions })
+      const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId)
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(messageRef)
+        if (!snapshot.exists() || snapshot.data().deletedAt) throw new Error('This message is no longer available.')
+        const reactions = { ...(snapshot.data().reactions || {}) }
+        if (reactions[uid] === emoji) delete reactions[uid]
+        else reactions[uid] = emoji
+        transaction.update(messageRef, { reactions })
+      })
       setSelectedMessageId(null)
       setReactionPickerMessageId(null)
     } catch (error) {
@@ -2085,8 +2107,8 @@ function App({ profile, isAdmin = false }) {
                 person={activeConversation}
                 size="header"
                 showStatus
-                subtitle={activeConversation.typing ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}
-                subtitleClass={activeConversation.typing ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}
+                subtitle={typingUsers.length > 0 ? 'Typing…' : activeConversation.status === 'online' ? 'Active now' : activeConversation.status === 'group' ? (activeConversation.members || 'Group conversation') : 'Last seen recently'}
+                subtitleClass={typingUsers.length > 0 ? 'chat-status-typing' : activeConversation.status === 'online' ? 'chat-status-online' : activeConversation.status === 'group' ? 'chat-status-group' : 'chat-status-offline'}
               />
               <div className="chat-header-actions">
                 <button className="icon-button" onClick={() => setMessageSearchOpen((open) => !open)} aria-label="Search messages" title="Search messages"><Icon name="search" /></button>
