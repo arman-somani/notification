@@ -559,6 +559,20 @@ function App({ profile, isAdmin = false }) {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
 
+  // Listen to each account's own block documents so the menu reflects persisted state.
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db || friendContacts.length === 0) return undefined
+    const unsubscribers = friendContacts.map((person) => onSnapshot(
+      doc(db, 'users', uid, 'blocks', person.id),
+      (snapshot) => setConversations((items) => items.map((item) => item.id === person.id
+        ? { ...item, blocked: snapshot.exists() }
+        : item)),
+      (error) => console.warn('[Converly] Block status could not be synced:', error),
+    ))
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  }, [friendContacts.map((person) => person.id).join('|'), auth?.currentUser?.uid])
+
   // Keep group previews and unread counts synchronized even when a group is not open.
   const groupConversationIds = conversations.filter((item) => item.status === 'group').map((item) => item.firebaseConversationId || item.id).join('|')
   useEffect(() => {
@@ -712,13 +726,20 @@ function App({ profile, isAdmin = false }) {
     const conversationId = isGroup
       ? (activeConversationRecord.firebaseConversationId || activeId)
       : directConversationId(uid, friend.id)
-    return onValue(ref(realtimeDb, 'typing/' + conversationId), (snapshot) => {
+    const unsubscribe = onValue(ref(realtimeDb, 'typing/' + conversationId), (snapshot) => {
       const now = Date.now()
       const users = Object.entries(snapshot.val() || {})
         .filter(([memberUid, value]) => memberUid !== uid && value?.isTyping === true && now - Number(value.updatedAt || 0) < 12000)
-        .map(([memberUid]) => memberUid)
+        .map(([memberUid, value]) => ({ uid: memberUid, updatedAt: Number(value.updatedAt || now) }))
       setTypingUsers(users)
     })
+    const staleTimer = window.setInterval(() => {
+      setTypingUsers((users) => users.filter((user) => Date.now() - user.updatedAt < 12000))
+    }, 4000)
+    return () => {
+      unsubscribe()
+      window.clearInterval(staleTimer)
+    }
   }, [activeId, activeConversationRecord?.status, activeConversationRecord?.firebaseConversationId, friendContacts, auth?.currentUser?.uid])
 
   useEffect(() => {
@@ -1547,7 +1568,47 @@ function App({ profile, isAdmin = false }) {
     } : item))
   }
 
-  const markAllRead = () => { setConversations((items) => items.map((item) => ({ ...item, unread: 0 }))); showToast('All conversations marked as read') }
+  const markAllRead = async () => {
+    const uid = auth?.currentUser?.uid
+    if (!uid || !db) return
+    try {
+      let batch = writeBatch(db)
+      let pendingWrites = 0
+      let marked = 0
+      const commitIfFull = async () => {
+        if (pendingWrites < 450) return
+        await batch.commit()
+        batch = writeBatch(db)
+        pendingWrites = 0
+      }
+      for (const conversation of conversations) {
+        if (!conversation.unread) continue
+        const conversationId = conversation.status === 'group'
+          ? (conversation.firebaseConversationId || conversation.id)
+          : (conversation.firebaseConversationId || directConversationId(uid, conversation.id))
+        const snapshot = await getDocs(query(
+          collection(db, 'conversations', conversationId, 'messages'),
+          orderBy('createdAt', 'desc'),
+          limit(100),
+        ))
+        for (const messageDocument of snapshot.docs) {
+          const data = messageDocument.data()
+          if (data.senderId === uid || data.deletedAt || (Array.isArray(data.readBy) && data.readBy.includes(uid))) continue
+          const patch = { readBy: arrayUnion(uid) }
+          if (!data.readAt) patch.readAt = serverTimestamp()
+          batch.update(messageDocument.ref, patch)
+          pendingWrites += 1
+          marked += 1
+          await commitIfFull()
+        }
+      }
+      if (pendingWrites) await batch.commit()
+      setConversations((items) => items.map((item) => ({ ...item, unread: 0 })))
+      showToast(marked ? 'Marked ' + marked + ' messages as read.' : 'All messages are already read.')
+    } catch (error) {
+      showToast(error?.code === 'permission-denied' ? 'Firestore denied bulk read receipts. Deploy the latest Firestore rules.' : error?.message || 'Could not mark all messages as read.')
+    }
+  }
 
   const toggleDesktopNotifications = async () => {
     if (!notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -1601,11 +1662,14 @@ function App({ profile, isAdmin = false }) {
     const remainingIds = activeConversation.memberIds.filter((memberUid) => memberUid !== uid)
     const wasAdmin = (activeConversation.adminIds || []).includes(uid)
     const promotedUid = wasAdmin ? remainingIds[0] : ''
+    const nextAdminIds = wasAdmin
+      ? [...(activeConversation.adminIds || []).filter((memberUid) => memberUid !== uid && memberUid !== promotedUid), ...(promotedUid ? [promotedUid] : [])]
+      : (activeConversation.adminIds || [])
     const batch = writeBatch(db)
     batch.delete(doc(db, 'conversations', conversationId, 'members', uid))
     batch.update(doc(db, 'conversations', conversationId), {
       memberIds: arrayRemove(uid),
-      adminIds: wasAdmin ? [ ...(activeConversation.adminIds || []).filter((id) => id !== uid && id !== promotedUid), ...(promotedUid ? [promotedUid] : []) ] : activeConversation.adminIds,
+      adminIds: nextAdminIds,
       moderatorIds: arrayRemove(uid),
       updatedAt: serverTimestamp(),
     })
@@ -2063,7 +2127,7 @@ function App({ profile, isAdmin = false }) {
                 ))}
                 {typingUsers.length > 0 && (
                   <div className="message-row message-incoming typing-row" aria-label={typingUsers.length === 1 ? 'A member is typing' : typingUsers.length + ' members are typing'}>
-                    <Avatar person={directory.find((person) => person.id === typingUsers[0]) || activeConversation} size="message" />
+                    <Avatar person={directory.find((person) => person.id === typingUsers[0].uid) || activeConversation} size="message" />
                     <div className="typing-indicator-bubble" role="status" aria-live="polite" aria-label="Typing">
                       <span />
                       <span />
