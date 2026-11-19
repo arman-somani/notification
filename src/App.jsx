@@ -229,6 +229,26 @@ const normalizeDisplayName = (value, fallback = 'Converly user') => {
 
 const directConversationId = (uid, otherUid) => [uid, otherUid].sort().join('__')
 
+const normalizeConversationMessages = (messages) => {
+  if (!Array.isArray(messages)) return []
+  return messages.filter((message) => message && typeof message === 'object').map((message) => {
+    const normalized = {
+      ...message,
+      text: typeof message.text === 'string' ? message.text : '',
+      reactions: Array.isArray(message.reactions) ? message.reactions.filter((reaction) => typeof reaction === 'string') : [],
+    }
+    if (message.type === 'poll') {
+      const poll = message.poll && typeof message.poll === 'object' ? message.poll : {}
+      normalized.poll = {
+        question: typeof poll.question === 'string' ? poll.question : 'Poll',
+        options: Array.isArray(poll.options) ? poll.options.filter((option) => typeof option === 'string') : [],
+        votes: poll.votes && typeof poll.votes === 'object' && !Array.isArray(poll.votes) ? poll.votes : {},
+      }
+    }
+    return normalized
+  })
+}
+
 function App({ profile, isAdmin = false }) {
   const canAccessAdmin = isAdmin && isDesignatedAdminEmail(auth?.currentUser?.email) && auth?.currentUser?.emailVerified === true
   const [theme, setTheme] = useState(() => localStorage.getItem('notification-theme') || 'light')
@@ -501,7 +521,14 @@ function App({ profile, isAdmin = false }) {
   const activeConversationRecord = conversations.find((conversation) => conversation?.id === activeId)
   // Keep the chat renderer safe when older or partially-written records omit messages.
   const activeConversation = activeConversationRecord
-    ? { ...activeConversationRecord, messages: Array.isArray(activeConversationRecord.messages) ? activeConversationRecord.messages : [] }
+    ? {
+      ...activeConversationRecord,
+      name: typeof activeConversationRecord.name === 'string' ? activeConversationRecord.name : 'Conversation',
+      messages: normalizeConversationMessages(activeConversationRecord.messages),
+      memberIds: Array.isArray(activeConversationRecord.memberIds) ? activeConversationRecord.memberIds : [],
+      admins: Array.isArray(activeConversationRecord.admins) ? activeConversationRecord.admins : [],
+      moderators: Array.isArray(activeConversationRecord.moderators) ? activeConversationRecord.moderators : [],
+    }
     : null
   useEffect(() => {
     const uid = auth?.currentUser?.uid
