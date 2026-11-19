@@ -2005,7 +2005,9 @@ function App({ profile, isAdmin = false }) {
                     <div className="message-content">
                       {message.sender && <span className="message-sender">{message.sender}</span>}
                       {message.replyToText && <div className="reply-context"><strong>Replying to</strong><span>{message.replyToText}</span></div>}
-                      {message.type === 'poll' ? (
+                      {message.deleted ? (
+                        <div className="message-bubble message-deleted">This message was deleted</div>
+                      ) : message.type === 'poll' ? (
                         <div className="poll-card"><strong>{message.poll.question}</strong>{message.poll.options.map((option) => { const votes = Object.values(message.poll.votes || {}).filter((vote) => vote === option).length; return <button type="button" key={option} onClick={() => voteOnPoll(message.id, option)} className={message.poll.votes?.you === option ? 'voted' : ''}><span>{option}</span><small>{votes} vote{votes === 1 ? '' : 's'}</small></button> })}</div>
                       ) : message.type === 'image' ? (
                         message.from === 'me' ? (
@@ -2035,7 +2037,7 @@ function App({ profile, isAdmin = false }) {
                         <div className="message-bubble">{message.text}</div>
                       )}
                       {message.reactions?.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>}
-                      <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name="checkDouble" size={13} className="read-check" />}{message.pinned && <Icon name="pin" size={12} />}</span>
+                      <span className="message-meta">{message.editedAt ? 'Edited · ' : ''}{message.time}{message.from === 'me' && <Icon name={message.status === 'read' ? 'checkDouble' : 'check'} size={13} className={message.status === 'read' ? 'read-check is-read' : 'read-check'} />}{message.pinned && <Icon name="pin" size={12} />}</span>
                       {!(message.type === 'audio' || message.type === 'voice' || message.type === 'voice-message' || message.type === 'recording' || Boolean(message.mediaUrl) || Boolean(message.audioUrl) || Boolean(message.mimeType?.startsWith('audio/'))) && <>
                         <button type="button" className="message-more-trigger" onClick={() => setSelectedMessageId((current) => current === message.id ? null : message.id)} aria-label="Message actions"><Icon name="more" size={15} /></button>
                         {selectedMessageId === message.id && <div className="message-action-row">
@@ -2058,15 +2060,15 @@ function App({ profile, isAdmin = false }) {
                     </div>
                   </div>
                 ))}
-                {activeConversation.typing && (
-                  <div className="message-row message-incoming typing-row" aria-label={activeConversation.name + ' is typing'}>
-                    <Avatar person={activeConversation} size="message" />
+                {typingUsers.length > 0 && (
+                  <div className="message-row message-incoming typing-row" aria-label={typingUsers.length === 1 ? 'A member is typing' : typingUsers.length + ' members are typing'}>
+                    <Avatar person={directory.find((person) => person.id === typingUsers[0]) || activeConversation} size="message" />
                     <div className="typing-indicator-bubble" role="status" aria-live="polite" aria-label="Typing">
                       <span />
                       <span />
                       <span />
                     </div>
-                    <span className="typing-label">typing</span>
+                    <span className="typing-label">{typingUsers.length === 1 ? 'typing' : typingUsers.length + ' typing'}</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -2095,7 +2097,7 @@ function App({ profile, isAdmin = false }) {
                   </div>
                 ) : (
                   <>
-                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => setMessageText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
+                    <textarea ref={messageInputRef} rows="1" value={messageText} onChange={(event) => { setMessageText(event.target.value); publishTyping(Boolean(event.target.value.trim())) }} onBlur={() => publishTyping(false)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(event) } }} placeholder="Write a message..." aria-label="Write a message" />
                     <span className="composer-hint">Enter to send · Shift + Enter for new line</span>
                   </>
                 )}
@@ -2177,8 +2179,8 @@ function App({ profile, isAdmin = false }) {
             <small>{activeConversation.blocked ? 'This user is blocked on this device. Unblock to send messages.' : 'Blocking is stored locally in this prototype. Server-side enforcement requires Firebase.'}</small>
           </div>}
           {activeConversation.status === 'group' && <div className="details-block group-management-block"><span className="section-label">GROUP MEMBERS · {(activeConversation.memberIds || []).length}</span>
-            {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => setConversations((items) => items.map((item) => item.id === activeId ? { ...item, moderators: (item.moderators || []).includes(memberId) ? (item.moderators || []).filter((id) => id !== memberId) : [...(item.moderators || []), memberId] } : item))}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
-            {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberId = event.target.value; if (memberId) setConversations((items) => items.map((item) => item.id === activeId ? { ...item, memberIds: [...new Set([...(item.memberIds || []), memberId])], members: (new Set([...(item.memberIds || []), memberId])).size + ' members' } : item)) }}><option value="" disabled>Add a member…</option>{directory.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
+            {(activeConversation.memberIds || []).filter((id) => id !== 'you').map((memberId) => { const member = directory.find((person) => person.id === memberId); if (!member) return null; return <div className="group-member-row" key={memberId}><Avatar person={member} size="sm" /><span>{member.name}<small>{(activeConversation.admins || []).includes(memberId) ? 'Admin' : (activeConversation.moderators || []).includes(memberId) ? 'Moderator' : 'Member'}</small></span>{(activeConversation.admins || []).includes('you') && <button onClick={() => toggleGroupModerator(memberId)}>{(activeConversation.moderators || []).includes(memberId) ? 'Remove mod' : 'Make mod'}</button>}</div> })}
+            {(activeConversation.admins || []).includes('you') && <select className="group-add-member" defaultValue="" onChange={(event) => { const memberUid = event.target.value; event.target.value = ''; if (memberUid) addGroupMember(memberUid) }}><option value="" disabled>Add a friend…</option>{friendContacts.filter((person) => !(activeConversation.memberIds || []).includes(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>}
           </div>}
           <div className="details-foot"><Icon name="shield" size={15} /> Your conversations stay yours.</div>
         </aside>
@@ -2237,7 +2239,7 @@ function App({ profile, isAdmin = false }) {
             <label className="group-name-field">Group name<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="e.g. Weekend plans" maxLength={48} /></label>
             <div className="group-member-picker"><strong>Add people</strong>{directory.filter((person) => person.status !== 'group').map((person) => <label key={person.id}><input type="checkbox" checked={groupMemberIds.includes(person.id)} onChange={(event) => setGroupMemberIds((ids) => event.target.checked ? [...ids, person.id] : ids.filter((id) => id !== person.id))} /><Avatar person={person} size="sm" /><span>{person.name}</span></label>)}</div>
             <div className="avatar-picker-actions"><button className="secondary-button" onClick={() => setShowGroupCreator(false)}>Cancel</button><button className="primary-button" onClick={createGroup}>Create group</button></div>
-            <div className="modal-footnote">Group creation is local-only until Firebase membership services are connected.</div>
+            <div className="modal-footnote">Groups sync with Firebase. You can invite accepted friends and manage members from group details.</div>
           </section>
         </div>
       )}
