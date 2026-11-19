@@ -26,7 +26,7 @@ export const normalizeMessage = (id, data = {}, uid = '') => {
     deleted: Boolean(data.deletedAt),
     attachmentPath: data.attachmentPath || '',
     viewOnce: data.viewOnce === true,
-    viewed: Boolean(data.viewedByUid),
+    viewed: Boolean(data.viewedByUids?.includes(uid) || (data.senderId !== uid && data.viewedByUid)),
     replyToId: data.replyToId || '',
     replyToText: data.replyToText || '',
     editedAt: timestampToMillis(data.editedAt),
